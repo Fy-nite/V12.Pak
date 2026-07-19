@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "dgSpecHash": "kkqhGPmt9Co=",
+  "success": true,
+  "projectFilePath": "D:\\git\\locus\\libs\\V12.Pak\\V12.Pak.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\charlie\\.nuget\\packages\\assimpnetter\\6.0.4\\assimpnetter.6.0.4.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\bepuphysics\\2.5.0-beta.29\\bepuphysics.2.5.0-beta.29.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\bepuutilities\\2.5.0-beta.29\\bepuutilities.2.5.0-beta.29.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\litenetlib\\1.1.0\\litenetlib.1.1.0.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\mongodb.bson\\2.25.0\\mongodb.bson.2.25.0.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\moonsharp\\2.0.0\\moonsharp.2.0.0.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\serilog\\4.4.0\\serilog.4.4.0.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\serilog.sinks.console\\6.1.1\\serilog.sinks.console.6.1.1.nupkg.sha512"
+  ],
+  "logs": []
+}

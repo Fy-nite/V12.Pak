@@ -1,0 +1,211 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "V12.Pak/1.0.0": {
+        "dependencies": {
+          "V12": "1.0.0"
+        },
+        "runtime": {
+          "V12.Pak.dll": {}
+        }
+      },
+      "AssimpNetter/6.0.4": {
+        "runtime": {
+          "lib/net6.0/AssimpNetter.dll": {
+            "assemblyVersion": "6.0.4.0",
+            "fileVersion": "6.0.4.0"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/linux-arm64/native/libassimp.so": {
+            "rid": "linux-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-x64/native/libassimp.so": {
+            "rid": "linux-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/osx-arm64/native/libassimp.dylib": {
+            "rid": "osx-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/osx-x64/native/libassimp.dylib": {
+            "rid": "osx-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-arm64/native/assimp.dll": {
+            "rid": "win-arm64",
+            "assetType": "native",
+            "fileVersion": "6.0.4.0"
+          },
+          "runtimes/win-x64/native/assimp.dll": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "6.0.4.0"
+          },
+          "runtimes/win-x86/native/assimp.dll": {
+            "rid": "win-x86",
+            "assetType": "native",
+            "fileVersion": "6.0.4.0"
+          }
+        }
+      },
+      "BepuPhysics/2.5.0-beta.29": {
+        "dependencies": {
+          "BepuUtilities": "2.5.0-beta.29"
+        },
+        "runtime": {
+          "lib/net8.0/BepuPhysics.dll": {
+            "assemblyVersion": "2.5.0.0",
+            "fileVersion": "2.5.0.0"
+          }
+        }
+      },
+      "BepuUtilities/2.5.0-beta.29": {
+        "runtime": {
+          "lib/net8.0/BepuUtilities.dll": {
+            "assemblyVersion": "2.5.0.0",
+            "fileVersion": "2.5.0.0"
+          }
+        }
+      },
+      "LiteNetLib/1.1.0": {
+        "runtime": {
+          "lib/net6.0/LiteNetLib.dll": {
+            "assemblyVersion": "1.1.0.0",
+            "fileVersion": "1.1.0.0"
+          }
+        }
+      },
+      "MongoDB.Bson/2.25.0": {
+        "runtime": {
+          "lib/netstandard2.1/MongoDB.Bson.dll": {
+            "assemblyVersion": "2.25.0.0",
+            "fileVersion": "2.25.0.0"
+          }
+        }
+      },
+      "MoonSharp/2.0.0": {
+        "runtime": {
+          "lib/netstandard1.6/MoonSharp.Interpreter.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "Serilog/4.4.0": {
+        "runtime": {
+          "lib/net10.0/Serilog.dll": {
+            "assemblyVersion": "4.4.0.0",
+            "fileVersion": "4.4.0.0"
+          }
+        }
+      },
+      "Serilog.Sinks.Console/6.1.1": {
+        "dependencies": {
+          "Serilog": "4.4.0"
+        },
+        "runtime": {
+          "lib/net8.0/Serilog.Sinks.Console.dll": {
+            "assemblyVersion": "6.1.1.0",
+            "fileVersion": "6.1.1.0"
+          }
+        }
+      },
+      "V12/1.0.0": {
+        "dependencies": {
+          "AssimpNetter": "6.0.4",
+          "BepuPhysics": "2.5.0-beta.29",
+          "LiteNetLib": "1.1.0",
+          "MongoDB.Bson": "2.25.0",
+          "MoonSharp": "2.0.0",
+          "Serilog": "4.4.0",
+          "Serilog.Sinks.Console": "6.1.1"
+        },
+        "runtime": {
+          "V12.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "V12.Pak/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "AssimpNetter/6.0.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-CCqtd+gNavdW9DJthXV+EVz0nyahey5cG89wgk4gMkx2T4WQ8LsRr0KPZuQ1L3YxGn56suszi2Utx3fUp0E4mQ==",
+      "path": "assimpnetter/6.0.4",
+      "hashPath": "assimpnetter.6.0.4.nupkg.sha512"
+    },
+    "BepuPhysics/2.5.0-beta.29": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-+/MSXnRpK3dPWQmVKL+dfO05gXcbqDlOUmHIvy2sAUiLFuSOga7E9AfcEwMMHn76Rdlz9ZKWYE+WyJJLIqmGbg==",
+      "path": "bepuphysics/2.5.0-beta.29",
+      "hashPath": "bepuphysics.2.5.0-beta.29.nupkg.sha512"
+    },
+    "BepuUtilities/2.5.0-beta.29": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-FF+QQpNQ3bP1PBzTp/rbRgIcSLNTbUjNU0KQAjl9aQ/zXGnwkh9oGcMFCO5Q/E9cMr0HOZlGkvhs4+SIgXFq5g==",
+      "path": "bepuutilities/2.5.0-beta.29",
+      "hashPath": "bepuutilities.2.5.0-beta.29.nupkg.sha512"
+    },
+    "LiteNetLib/1.1.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-GavpDPs65Y4vvAeECbApWXynTOn7f7IVIHmRKpPmzLWSf3vllcxHN4XPN+Tu3YFqIwOYUdgI8fhkCMhn4FLQCw==",
+      "path": "litenetlib/1.1.0",
+      "hashPath": "litenetlib.1.1.0.nupkg.sha512"
+    },
+    "MongoDB.Bson/2.25.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-xQx/qtC2nu9oGiyNqAwfiDpUMweLi0nID677cyKykpwmj5AVMrnd//UwmcmuX95178DeY6rf7cjmA613TQXPiA==",
+      "path": "mongodb.bson/2.25.0",
+      "hashPath": "mongodb.bson.2.25.0.nupkg.sha512"
+    },
+    "MoonSharp/2.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-uiAcRh7d+53k3xW9pFDJfAFVw4RnjHVCJG05M3oPAVEVwPtFavhg1H/IpC6So4X1j9kJlzuLlA3OghhPcIvc5A==",
+      "path": "moonsharp/2.0.0",
+      "hashPath": "moonsharp.2.0.0.nupkg.sha512"
+    },
+    "Serilog/4.4.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ZC6Le3rr4TVJJjS4KsQAesxeF1EhW9qcZmmG7eP5Y2G3+gTGkJEUXkq4+tZNPtyp05I0wWOxnIjwtxFweJsObw==",
+      "path": "serilog/4.4.0",
+      "hashPath": "serilog.4.4.0.nupkg.sha512"
+    },
+    "Serilog.Sinks.Console/6.1.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-8jbqgjUyZlfCuSTaJk6lOca465OndqOz3KZP6Cryt/IqZYybyBu7GP0fE/AXBzrrQB3EBmQntBFAvMVz1COvAA==",
+      "path": "serilog.sinks.console/6.1.1",
+      "hashPath": "serilog.sinks.console.6.1.1.nupkg.sha512"
+    },
+    "V12/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
