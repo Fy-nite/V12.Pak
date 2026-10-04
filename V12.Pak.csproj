@@ -4,8 +4,13 @@
     <OutputType>library</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <LangVersion>10.0</LangVersion>
+ 
     <RootNamespace>V12.Pak</RootNamespace>
+            <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>Finite.V12.Pak</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Charlie-san; Finite</Authors>
+    <Description>Finite's V12 game engine pack loader, powered by CSharp and dreams</Description>
   </PropertyGroup>
 
   <ItemGroup>
