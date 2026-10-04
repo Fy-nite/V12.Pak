@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using V12.Core;
 using V12.Core.Interfaces;
+using V12.WorldML;
 
 namespace V12.Pak
 {
@@ -95,8 +96,30 @@ namespace V12.Pak
                             continue;
                         }
 
-                        // Load the world using WorldLoader
-                        Core.WorldLoader.LoadFromArchive(worldXmlPath);
+                        // Parse the world.xml directly — it is a scene file inside the
+                        // extracted pak, not a .V12World zip — then register the world on
+                        // the active GameRoot.
+                        var templates = new WorldTemplateProvider();
+                        if (!string.IsNullOrEmpty(world.TemplatesDir))
+                        {
+                            string templateDir = Path.Combine(_reader.TempDirectory, world.TemplatesDir);
+                            if (Directory.Exists(templateDir))
+                                templates.LoadFromDirectory(templateDir);
+                        }
+
+                        var parser = new WorldMLParser { TemplateProvider = templates };
+                        var worldContents = parser.Parse(File.ReadAllText(worldXmlPath));
+
+                        var loaded = new World(worldContents.Name ?? world.Name)
+                        {
+                            MountPoint = world.Name,
+                            ExtractPath = _reader.TempDirectory,
+                        };
+                        loaded.AddElement(worldContents);
+
+                        var gameRoot = Core.GameRoot.Instance;
+                        if (gameRoot != null && !gameRoot.Worlds.Contains(loaded))
+                            gameRoot.Worlds.Add(loaded);
 
                         _results.Add(new V12PakLoaderResult
                         {
