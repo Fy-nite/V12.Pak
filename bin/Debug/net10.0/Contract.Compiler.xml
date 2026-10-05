@@ -1,0 +1,973 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Contract.Compiler</name>
+    </assembly>
+    <members>
+        <member name="T:Contract.Compiler.AST.AttributeUsage">
+            <summary>
+            An attribute application: <code>&lt;Name(arg1, arg2)&gt;</code>.
+            Arguments are kept as raw source text (strings retain their quotes),
+            matching how the IR stores attribute arguments in its string pool.
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.Program.ExternalModules">
+            <summary>
+            Compiled modules pulled in via <c>import "lib.orbt";</c> (DLL-style
+            references). Their types are synthesized into the declaration lists
+            for analysis; the codegen statically links these module bodies into
+            the output.
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ContractDeclaration.SourceFile">
+            <summary>Absolute path of the .ct file that declared this contract (set by the parser).</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ContractDeclaration.Namespace">
+            <summary>Java-style package, from `namespace com.example;`. Null when undeclared.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ContractDeclaration.IsExternal">
+            <summary>True when this type came from an imported compiled module (statically linked, not re-emitted).</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ContractDeclaration.FullName">
+            <summary>Namespace-qualified wire name — <c>com.example.Foo</c> or just <c>Foo</c> when unnamed.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ContractDeclaration.BaseTypeName">
+            <summary>Single-inheritance base type name (C#-style), or null.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ContractDeclaration.IsAttributeType">
+            <summary>True when this contract (transitively) inherits from the built-in Attribute type. Set by the analyzer.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ContractDeclaration.NativeBindingName">
+            <summary>
+            When the contract is marked <c>&lt;NativeBinding("Module")&gt;</c>, the
+            name of the host module its members dispatch to. Calls to this
+            contract's methods become native calls to <c>Module.Method</c>
+            (instance calls pass the receiver as argument 0), and
+            <c>new Contract()</c> becomes <c>Module.Create</c>.
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ContractDeclaration.ClrImportType">
+            <summary>
+            When the contract is marked <c>&lt;ClrImport("System.Math")&gt;</c>, the
+            CLR type whose public static methods its <c>static fn</c>s map to.
+            Unlike <c>NativeBinding</c> no host-side <c>[ClassBinding]</c> wrapper
+            is needed: calls emit <c>Type.Method</c> targets and the runtime
+            resolves them via CLR reflection.
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ContractDeclaration.DllImportLibrary">
+            <summary>
+            When the contract is marked <c>&lt;DllImport("user32.dll")&gt;</c>, the
+            native library its <c>static fn</c>s P/Invoke. Method signatures are
+            emitted into the module metadata so the runtime's DllImportResolver
+            can generate the marshalling bridge.
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.StructDeclaration.SourceFile">
+            <summary>Absolute path of the .ct file that declared this struct (set by the parser).</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.StructDeclaration.Namespace">
+            <summary>Java-style package, from `namespace com.example;`. Null when undeclared.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.StructDeclaration.IsExternal">
+            <summary>True when this type came from an imported compiled module.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.StructDeclaration.FullName">
+            <summary>Namespace-qualified wire name.</summary>
+        </member>
+        <member name="T:Contract.Compiler.AST.EnumDeclaration">
+            <summary>
+            An enum declaration: <c>enum Color { Red, Green, Blue }</c>. Members are
+            named constants that fold to their zero-based index at compile time
+            (<c>Color.Red</c> emits <c>ldc.i4 0</c>); the type itself is emitted to
+            the IR for type checking and reflection.
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.EnumDeclaration.SourceFile">
+            <summary>Absolute path of the .ct file that declared this enum (set by the parser).</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.EnumDeclaration.Namespace">
+            <summary>Java-style package, from `namespace com.example;`. Null when undeclared.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.EnumDeclaration.IsExternal">
+            <summary>True when this type came from an imported compiled module.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.EnumDeclaration.FullName">
+            <summary>Namespace-qualified wire name.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.StructField.IsStatic">
+            <summary>True for <c>static name: type;</c> declarations — shared state on the contract.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ConstructorDeclaration.SourceFile">
+            <summary>Absolute path of the .ct file that declared this constructor (set by the parser).</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.FunctionDeclaration.SourceFile">
+            <summary>Absolute path of the .ct file that declared this function (set by the parser).</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.BinaryExpression.ResolvedType">
+            <summary>Resolved result type (e.g. string for concat), set during semantic analysis.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.LambdaExpression.ParameterTypes">
+            <summary>Optional param type annotations (aligned with Parameters; "" when absent).</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.LambdaExpression.Body">
+            <summary>Expression body (fun x -> expr).</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.LambdaExpression.BlockBody">
+            <summary>Block body (fun (x) -> { stmts }). Mutually exclusive with Body.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.NewExpression.TypeName">
+            <summary>
+            The type to allocate. Written form initially (short or
+            module-qualified, e.g. <c>Terminal.Terminal</c>); the semantic
+            analyzer rewrites it to the fully-qualified wire name once
+            namespace/import resolution runs.
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.NewExpression.Arguments">
+            <summary>Constructor arguments — non-null for `new Type(args)`.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.ArrayLiteralExpression.ElementType">
+            <summary>Element type, resolved during semantic analysis.</summary>
+        </member>
+        <member name="T:Contract.Compiler.AST.TypeDescriptor">
+             <summary>
+             Describes a type in the Contract type system. This is the Phase 0 replacement
+             for raw type strings: it can represent simple named types ("int", "Person"),
+             array types ("int[]"), and function types ("(int, bool) -> string").
+            
+             The three shapes are structurally comparable (records / custom equality), so
+             inference can compare types by value.
+             </summary>
+        </member>
+        <member name="F:Contract.Compiler.AST.TypeDescriptor.Empty">
+            <summary>The untyped marker (empty name), used before inference runs.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.TypeDescriptor.IsEmpty">
+            <summary>True when this descriptor is the untyped/empty placeholder.</summary>
+        </member>
+        <member name="P:Contract.Compiler.AST.TypeDescriptor.IsString">
+            <summary>True when this descriptor is the 'string' type (case-insensitive).</summary>
+        </member>
+        <member name="T:Contract.Compiler.AST.TypeDescriptor.Named">
+            <summary>A simple named type, e.g. "int", "Person". Arrays are NOT included here.</summary>
+        </member>
+        <member name="T:Contract.Compiler.AST.TypeDescriptor.ArrayOf">
+            <summary>An array of some element type, e.g. "int[]".</summary>
+        </member>
+        <member name="T:Contract.Compiler.AST.TypeDescriptor.GenericInstance">
+            <summary>
+            An instantiated generic type, e.g. "List&lt;int&gt;" or
+            "Dict&lt;string, int&gt;". In version 1.0 these are type-erased: the
+            runtime sees the same object-backed class (the unbound name), and the
+            element types exist only for compile-time checking.
+            </summary>
+        </member>
+        <member name="T:Contract.Compiler.AST.TypeDescriptor.Function">
+            <summary>A function type, e.g. "(int, bool) -> string".</summary>
+        </member>
+        <member name="M:Contract.Compiler.AST.TypeDescriptor.Parse(System.String)">
+            <summary>
+            Parses a type string into a descriptor. Supports simple names ("int", "Person"),
+            array suffixes ("int[]", "int[][]"), and function types ("(int, bool) -> string").
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.AST.TypeDescriptor.SplitTopLevel(System.String)">
+            <summary>Splits a string on top-level commas, ignoring commas inside
+            parentheses, brackets, or angle brackets.</summary>
+        </member>
+        <member name="T:Contract.Compiler.CodeGen.IRCodeGenerator.LambdaInfo">
+            <summary>Everything the codegen needs to know about a synthesized lambda.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.GetIRText">
+            <summary>Returns the generated ObjektIR text, or null when nothing was generated.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.BuildModule">
+            <summary>
+            Builds the module and statically links any imported compiled modules
+            (DLL-style references) into it, deduplicating by fully-qualified name.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.IsInstanceField(System.String)">
+            <summary>True when 'name' resolves to a (non-static) field of the current instance.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.IsStaticField(System.String)">
+            <summary>True when 'name' is a static field of the current contract (shared state).</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.IsStaticField(System.String,System.String)">
+            <summary>True when 'contractName.fieldName' is a static field (short or qualified).</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.StaticFieldReference(System.String)">
+            <summary>The static field reference for 'name' on the current contract.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.FindEnumMemberIndex(System.String,System.String)">
+            <summary>The zero-based index of an enum member, or -1 when not an enum member.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.TryGetTypePath(Contract.Compiler.AST.Expression,System.String@)">
+            <summary>Collects a pure identifier-dot chain (com.lib.Geo) from a member expression, if any.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.ResolveMemberObjectType(System.String)">
+            <summary>
+            Resolves the declaring type name for a member access object:
+            <c>this</c> → the current contract; a known variable → its declared type;
+            anything else (module/static names) → the name itself. The VM keys fields
+            as <c>Type.field</c>, so using the variable name instead of its type made
+            <c>p.count</c> fail with "Unresolved field 'p.count'".
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.InstanceFieldReference(System.String)">
+            <summary>The field reference for 'name' on the current contract.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.FindFieldType(System.String,System.String)">
+            <summary>Looks up a field's type on the given contract/struct type name (short or qualified).</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.CollectHoistInfo(Contract.Compiler.AST.Statement,System.Collections.Generic.Dictionary{System.String,Contract.Compiler.AST.TypeDescriptor},System.Collections.Generic.List{Contract.Compiler.AST.LambdaExpression})">
+            <summary>
+            Walks a function body collecting every local declaration (name → type)
+            and every lambda expression at any depth — the input to the hoisting
+            pre-pass so capture analysis sees the whole scope, not just the locals
+            declared before a given lambda.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.AnalyzeCaptures(Contract.Compiler.AST.LambdaExpression,System.Collections.Generic.Dictionary{System.String,Contract.Compiler.AST.TypeDescriptor})">
+            <summary>
+            Collects free variables in the lambda body: identifiers that are not
+            lambda params (or shadowed by nested lambda params / block locals) and
+            whose type is known in <paramref name="visibleTypes"/> (the enclosing
+            scope). These become display fields (by-reference capture).
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.GenerateLambdaValue(ObjektRT.Core.Builder.InstructionBuilder,Contract.Compiler.CodeGen.IRCodeGenerator.LambdaInfo,System.Collections.Generic.Dictionary{System.String,System.Int32})">
+            <summary>
+            Emits a delegate value for a lambda. Non-capturing: newobj Delegate +
+            store target. By-reference capture: the delegate's closure is the
+            function's shared display object (no values are copied). Fallback
+            (fresh per-lambda closure): allocate the delegate, then a closure
+            copying current values from the enclosing scope. The delegate is left
+            on the stack as the value.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.LoadClosure(ObjektRT.Core.Builder.InstructionBuilder)">
+            <summary>
+            Pushes the active closure object: the __closure arg in a lambda body, or
+            the shared display local in an ordinary function body.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.EnsureDelegateClass">
+            <summary>
+            Emits the compiler-generated Delegate class (fields 'target: string' and
+            'closure: object') into the module once, so newobj/stfld/callvirt against
+            it resolve.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.TryGetDelegateFunctionType(Contract.Compiler.AST.TypeDescriptor.GenericInstance,Contract.Compiler.AST.TypeDescriptor.Function@)">
+            <summary>
+            True when <paramref name="g"/> is <c>Delegate&lt;F&gt;</c>; exposes the
+            wrapped function type F.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.GetCallFunctionType(Contract.Compiler.AST.CallExpression)">
+            <summary>
+            The function type of the delegate a call produces, when that result is a
+            function type. Drives <c>f()(args)</c>: the inner call must produce a
+            delegate whose signature the outer invocation uses.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.IsCaptured(System.String)">
+            <summary>True when 'name' is a captured variable of the active lambda body.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.CaptureFieldReference(System.String)">
+            <summary>A field reference on the active closure class for a captured variable.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.HasType(System.String)">
+            <summary>True when a declared type has this (possibly qualified) name.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.ResolveTypeName(System.String)">
+            <summary>
+            Resolves a possibly-short type name to its fully-qualified wire name:
+            the current contract's namespace is preferred, then namespace imports
+            (mapping the first segment of dotted names too — `Terminal.Terminal`
+            with `import ovh.finite.hello.Terminal;` → `ovh.finite.hello.Terminal.Terminal`),
+            then a unique short-name match. Falls back to the name unchanged.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.CurrentContractNamespace">
+            <summary>The namespace of the contract currently being generated, if any.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.UniqueShortMatch(System.String)">
+            <summary>The single qualified name for a short name, or null when ambiguous/absent.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.ElementTypeOfArrayLiteral(Contract.Compiler.AST.ArrayLiteralExpression)">
+            <summary>
+            Resolves the element type for a newarr from an array literal. Prefers the
+            analyzer-resolved element type, then the declaring variable's array type
+            (for empty literals), then the first element's literal value.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.NativeBindingFor(System.String)">
+            <summary>The host module name for a native-bound contract type, or null.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CodeGen.IRCodeGenerator.EmitArithmeticOrConcat(ObjektRT.Core.Builder.InstructionBuilder,System.String,Contract.Compiler.AST.BinaryExpression)">
+            <summary>
+            Emits the operation for a compound assignment. String concatenation (op "+"
+            where the expression resolved to a string) lowers to String.Concat instead of add.
+            </summary>
+        </member>
+        <member name="T:Contract.Compiler.CompiledReferenceLoader">
+            <summary>
+            Shared logic for loading compiled module references (<c>.orbt</c>/<c>.oil</c>/<c>.oir</c>)
+            as DLL-style includes: parse the module into an IR AST, retain the raw body for
+            static linking, and synthesize Contract declarations so the analyzer can resolve
+            calls/fields/ctors. Used by both the command-line <see cref="T:Contract.Compiler.CompilerDriver"/> and
+            the language server's in-memory <c>ProgramLoader</c>.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CompiledReferenceLoader.IsCompiledReference(System.String)">
+            <summary>True when a path is a compiled module reference rather than a .ct source file.</summary>
+        </member>
+        <member name="M:Contract.Compiler.CompiledReferenceLoader.ParseModule(System.String)">
+            <summary>Parses a compiled module file into an IR module AST (binary or text).</summary>
+        </member>
+        <member name="M:Contract.Compiler.CompiledReferenceLoader.Synthesize(ObjektRT.Core.AST.ModuleNode,Contract.Compiler.AST.Program)">
+            <summary>
+            Records the module for static linking and synthesizes Contract declarations
+            for its types into <paramref name="program"/>. Deduplicates modules by name.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CompiledReferenceLoader.SynthesizeExternalDeclarations(ObjektRT.Core.AST.ModuleNode,Contract.Compiler.AST.Program)">
+            <summary>
+            Turns a compiled module's types into Contract AST declarations so the
+            analyzer can resolve calls/fields/ctors and the codegen can emit
+            qualified references. The bodies stay in the retained module.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CompiledReferenceLoader.WireToLanguageType(System.String)">
+            <summary>Maps a wire type name ("int32", "float64[]") to the language type name ("int", "double[]").</summary>
+        </member>
+        <member name="M:Contract.Compiler.CompilerDriver.#ctor(Contract.Compiler.Diagnostics.DiagnosticBag,System.Func{System.String,System.String})">
+            <summary>
+            When <paramref name="sourceProvider"/> is set, it is consulted (with the absolute file path)
+            before reading from disk. Return null to fall back to disk. This lets embedders (e.g. a
+            language server) compile documents that only exist in memory.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CompilerDriver.ExtraSearchRoots">
+            <summary>
+            Search roots for Python-style namespace imports, after the importing
+            file's own directory: the main file's directory, then the CWD.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.CompilerDriver.LoadCompiledReference(System.String,Contract.Compiler.AST.Program)">
+            <summary>
+            Loads a compiled module (.orbt / .oil / .oir) as a static reference:
+            its types are synthesized into the program for analysis, and the raw
+            module body is retained for the codegen to link into the output.
+            </summary>
+        </member>
+        <member name="T:Contract.Compiler.ContractProject">
+            <summary>
+            A Contract project: a folder containing a <c>contract.ctproj</c> settings
+            file that describes how to build the sources in the folder — as an
+            executable (needs a <c>Main</c>) or as a library (no entry point; the
+            compiled module is included from other projects).
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.Name">
+            <summary>Project name (folder name by default).</summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.Type">
+            <summary>"exe" (has/needs Main) or "lib" (no entry point required).</summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.Main">
+            <summary>Main source file, relative to the project root. Defaults to src/main.ct.</summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.Namespace">
+            <summary>Declared namespace applied to new files created by `ccl new` (optional).</summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.Output">
+            <summary>Output directory for compiled modules, relative to the project root. Defaults to bin.</summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.IsExecutable">
+            <summary>True when the project builds as an executable (requires a Main entry point).</summary>
+        </member>
+        <member name="F:Contract.Compiler.ContractProject.FileName">
+            <summary>The file name of the project settings file inside the project root.</summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.RootPath">
+            <summary>Absolute path of the project root directory.</summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.SettingsPath">
+            <summary>Absolute path of the project settings file.</summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.MainPath">
+            <summary>Absolute path of the main source file.</summary>
+        </member>
+        <member name="P:Contract.Compiler.ContractProject.OutputPath">
+            <summary>Absolute path of the output directory.</summary>
+        </member>
+        <member name="M:Contract.Compiler.ContractProject.Load(System.String)">
+            <summary>Loads the project settings from <paramref name="settingsPath"/> (or a directory containing it).</summary>
+        </member>
+        <member name="M:Contract.Compiler.ContractProject.Save(System.String)">
+            <summary>Writes the settings file into <paramref name="rootPath"/>.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Diagnostics.DiagnosticBag.ReportWarningsToConsole">
+            <summary>Reports warnings and info (not errors) to the console. Used after a
+            successful compile so developers see warnings without a failure.</summary>
+        </member>
+        <member name="T:Contract.Compiler.ImportResolver">
+             <summary>
+             Python-style import resolution. An <c>import</c> statement names either a
+             quoted file path (<c>import "terminal.ct";</c>) or a dotted namespace
+             (<c>import ovh.finite.hello.Terminal;</c>). Both resolve to a file on
+             disk:
+            
+             <list type="bullet">
+             <item>The quoted path resolves relative to the importing file's directory.</item>
+             <item>
+             The dotted name maps dots to directory separators, like Python modules:
+             <c>ovh.finite.hello.Terminal</c> → <c>ovh/finite/hello/Terminal.ct</c>.
+             </item>
+             </list>
+            
+             Search roots, in order: the importing file's directory, then the main
+             file's directory, then the current working directory.
+             </summary>
+        </member>
+        <member name="M:Contract.Compiler.ImportResolver.ResolveImport(System.String,System.String,System.Collections.Generic.IEnumerable{System.String})">
+            <summary>Resolves an import spec to an existing file path, or null when nothing matches.</summary>
+        </member>
+        <member name="M:Contract.Compiler.ImportResolver.ResolveNamespace(System.String,System.String,System.Collections.Generic.IEnumerable{System.String})">
+            <summary>
+            Maps a dotted namespace to a file path: dots become directory
+            separators and the last segment becomes the file name. Tries source
+            (<c>.ct</c>) then compiled-reference (<c>.oir</c>/<c>.oil</c>/<c>.orbt</c>)
+            extensions. Returns null when no candidate file exists.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.ImportResolver.ResolveRelativePath(System.String,System.String,System.Collections.Generic.IEnumerable{System.String})">
+            <summary>
+            Resolves a (possibly relative) path against the importing file's
+            directory, then the extra search roots. Absolute paths are used
+            directly. Returns null when no candidate exists.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.ImportResolver.NormalizeAbsolutePath(System.String)">
+            <summary>
+            Normalizes a path to an absolute form without throwing. Repairs
+            drive-relative paths like <c>\d:\git\foo.ct</c> (a leading separator
+            before a drive letter) that some editors/clients produce.
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.Parsing.Token.Length">
+            <summary>Length of the token text in characters. End position (exclusive) is Column + Length.</summary>
+        </member>
+        <member name="P:Contract.Compiler.Parsing.Token.EndColumn">
+            <summary>Column (1-based) of the first character AFTER this token, i.e. start + length.</summary>
+        </member>
+        <member name="F:Contract.Compiler.Parsing.Parser._currentNamespace">
+            <summary>Current `namespace com.example;` for the file — applied to subsequent declarations.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Parsing.Parser.AddError(System.String,System.Int32,System.Int32)">
+            <summary>Reports a parse error attributed to this parser's source file (if any).</summary>
+        </member>
+        <member name="M:Contract.Compiler.Parsing.Parser.AddWarning(System.String,System.Int32,System.Int32)">
+            <summary>Reports a parse warning attributed to this parser's source file (if any).</summary>
+        </member>
+        <member name="M:Contract.Compiler.Parsing.Parser.ParseAttributes">
+            <summary>
+            Parses zero or more attribute applications: <c>&lt;Name(arg1, arg2)&gt;</c>.
+            Arguments are string / numeric / bool literals or bare identifiers; each is
+            kept as raw source text (strings retain their quotes, matching the IR's
+            string-pool convention for annotation arguments).
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Parsing.Parser.TryGetDottedPath(Contract.Compiler.AST.Expression,System.String@)">
+            <summary>
+            Collects a dotted identifier path from an expression: IdentifierExpression("A")
+            → "A"; A.B.C (a left-leaning chain of MemberExpressions over identifiers) → "A.B.C".
+            Returns false for anything else (calls, indexers, literals, ...).
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Parsing.Parser.CheckNext(Contract.Compiler.Parsing.TokenType)">
+            <summary>True when the token AFTER the current one has the given type.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.ValidateFieldTypes(Contract.Compiler.AST.Program)">
+            <summary>
+            Validates every field declaration in the program: the declared type
+            must be known/valid, must not be <c>void</c>/<c>null</c>, and field
+            names must be unique within the declaring type.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.ValidateInheritanceAndAttributes(Contract.Compiler.AST.Program)">
+            <summary>
+            Validates base types and inheritance cycles across all contracts,
+            marks contracts that (transitively) inherit from the built-in
+            <c>Attribute</c> type, then validates every attribute application.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.ValidateNativeImports(Contract.Compiler.AST.Program)">
+             <summary>
+             Validates <c>&lt;NativeBinding("Module")&gt;</c> contracts: a native
+             binding is a pure facade — no fields, no constructors, and every
+             member function is an empty-bodied declaration that dispatches to
+             <c>Module.Method</c> at runtime. The module must be a registered
+             host binding and each declared method must exist on it.
+            
+             Also validates the two CLR-facing facades:
+             <c>&lt;ClrImport("System.Math")&gt;</c> (methods map to public static
+             methods on a CLR type, resolved by reflection — no host binding
+             class needed) and <c>&lt;DllImport("user32.dll")&gt;</c> (methods
+             P/Invoke native exports of the named library).
+             </summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.Warn(System.String,System.Int32,System.Int32)">
+            <summary>Adds a warning attributed to the file currently being analyzed.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.CanFallThrough(Contract.Compiler.AST.Statement)">
+            <summary>True when control can reach the end of a statement (i.e. it doesn't always return/break/continue).</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.RecordFieldAccess(Contract.Compiler.AST.MemberExpression,System.Boolean)">
+            <summary>
+            Records a member read/write against the owning contract type when the
+            object is a known variable (or <c>this</c>), so dead-field detection
+            works for instance fields.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.FindContract(System.String)">
+            <summary>Finds a contract by short or namespace-qualified name.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.CurrentContractNamespace">
+            <summary>The namespace of the contract currently being analyzed, if any.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.UniqueShortMatch(System.String)">
+            <summary>The single qualified name for a short name, or null when ambiguous/absent.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.ResolveTypeName(System.String)">
+            <summary>
+            Resolves a possibly-short type name to its fully-qualified wire name
+            through the current contract's namespace and the program's namespace
+            imports (Python/Java-style). Records the name (short + full) as a
+            type usage and marks the resolving import as used. Returns the name
+            unchanged when nothing resolves.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.FindFunctionDecl(System.String)">
+            <summary>Finds a function declaration by name (top-level or contract member).</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.IsInvalidBareInstanceCall(System.String)">
+            <summary>
+            True when a bare call to <paramref name="name"/> targets an instance
+            method that has no implicit receiver here: we're not inside an
+            instance method, or the method belongs to a different contract.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.FindContractStaticField(System.String,System.String)">
+            <summary>Type of a static field on a contract, or null when it isn't one.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.FindStaticFieldTypeAnywhere(System.String)">
+            <summary>Type of a bare static field access, or null when no contract declares it.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.FindFieldType(System.String,System.String)">
+            <summary>
+            Type of a field read where <paramref name="ownerName"/> is either a
+            contract name (static field) or a variable of a contract type (instance
+            field). Returns null when it isn't a known field.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.GetCallResultFunctionType(Contract.Compiler.AST.CallExpression)">
+            <summary>
+            The function type of the delegate that a call produces — the call's
+            result type when that result is a function type. Used to resolve
+            <c>f()(args)</c>: the inner call must produce a delegate whose
+            signature drives the outer invocation.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.TryGetModuleAccessPath(Contract.Compiler.AST.MemberExpression,System.String@)">
+            <summary>
+            Collects the dotted identifier spine on the left of a member access:
+            IO.Println → "IO"; ObjektRT.Stdlib.System.IO.Println → "ObjektRT.Stdlib.System.IO".
+            The outermost <see cref="P:Contract.Compiler.AST.MemberExpression.Property"/> is the member, not part of the path.
+            Returns false when the base is not a pure identifier chain.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.IsModuleAccessChain(Contract.Compiler.AST.MemberExpression)">
+            <summary>True when the member chain's base is a bound stdlib module (possibly dotted).</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.IsUserType(System.String)">
+            <summary>True when a (possibly dotted) name is a user-declared contract, struct, or enum.</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.SemanticAnalyzer.IsTypeAccessChain(Contract.Compiler.AST.MemberExpression)">
+            <summary>True when a member chain's base is a qualified user type reference (com.lib.Geo.Member).</summary>
+        </member>
+        <member name="M:Contract.Compiler.Semantics.TypeRegistry.IsValid(Contract.Compiler.AST.TypeDescriptor)">
+            <summary>
+            Validates a type descriptor. Arrays are valid when their element is valid;
+            function types are valid when every parameter and the return type are valid;
+            generic instances are valid when the unbound name is a known generic and
+            every argument is valid.
+            </summary>
+        </member>
+        <member name="T:Contract.Compiler.StandardLibrary.IReflectHost">
+            <summary>
+            Host implementation for the in-language <c>Reflect</c> module. The runtime
+            host (a <c>ContractRuntime</c>) sets <see cref="P:Contract.Compiler.StandardLibrary.ReflectModule.Host"/> so
+            Contract code can introspect the loaded module at runtime.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Types">
+            <summary>Every type in the loaded module, as qualified wire names.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.HasType(System.String)">
+            <summary>True when a type with this (short or qualified) name exists.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Methods(System.String)">
+            <summary>Qualified names ("Type.Method") of a type's methods, including inherited.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Fields(System.String)">
+            <summary>Qualified names ("Type.field") of a type's fields, including inherited.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.BaseType(System.String)">
+            <summary>The direct base type's wire name, or "" when none.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.ModuleName">
+            <summary>The loaded module's name, or "" when nothing is loaded.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Kind(System.String)">
+            <summary>The type's kind: "Class" / "Interface" / "Struct" / "Enum", or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.IsClass(System.String)">
+            <summary>True when the type is a class (TypeKind.Class).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.IsInterface(System.String)">
+            <summary>True when the type is an interface (TypeKind.Interface).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.IsStruct(System.String)">
+            <summary>True when the type is a struct (TypeKind.Struct).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.IsEnum(System.String)">
+            <summary>True when the type is an enum (TypeKind.Enum).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.IsAbstract(System.String)">
+            <summary>True when the type is abstract (IR <c>TypeFlags.Abstract</c>).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.IsSealed(System.String)">
+            <summary>True when the type is sealed (IR <c>TypeFlags.Sealed</c>).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Access(System.String)">
+            <summary>The type's declared access: "Public" / "Private" / "Protected" / "Internal".</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Interfaces(System.String)">
+            <summary>Direct interfaces implemented by the type, by name (external ones as "").</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.AllInterfaces(System.String)">
+            <summary>All interfaces implemented by the type, including inherited ones.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Hierarchy(System.String)">
+            <summary>This type and all its bases, most-derived first.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.IsSubclassOf(System.String,System.String)">
+            <summary>True when <paramref name="typeName"/> transitively inherits from <paramref name="baseTypeName"/>.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.IsAssignableFrom(System.String,System.String)">
+            <summary>True when <paramref name="otherTypeName"/> is <paramref name="typeName"/>, a subclass of it, or (for interfaces) an implementor of it.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Resolve(System.String)">
+            <summary>Resolves a qualified method name ("Type.Method") through inheritance — the most-derived declaration wins — returning its canonical "DeclaringType.Method" form, or "" when unresolvable.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.DeclaredMethods(System.String)">
+            <summary>Methods declared on the type itself (not inherited), as "Type.Method".</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.DeclaredFields(System.String)">
+            <summary>Fields declared on the type itself (not inherited), as "Type.field".</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Attributes(System.String)">
+            <summary>Attributes applied to the type, as "Name(arg, ...)" strings.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.MethodAttributes(System.String,System.String)">
+            <summary>Attributes applied to a method, as "Name(arg, ...)" strings.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.MethodReturn(System.String,System.String)">
+            <summary>The method's declared return type name ("int32", "string", "void", ...), or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.MethodParams(System.String,System.String)">
+            <summary>The method's parameters as "type name" strings ("int32 x"), or empty when unknown. Instance methods include "this" as parameter 0.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.MethodStatic(System.String,System.String)">
+            <summary>True when the method is static.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.MethodVirtual(System.String,System.String)">
+            <summary>True when the method is virtual (IR <c>MethodFlags.Virtual</c>).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.MethodOverride(System.String,System.String)">
+            <summary>True when the method is an override (IR <c>MethodFlags.Override</c>).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.MethodAbstract(System.String,System.String)">
+            <summary>True when the method is abstract (IR <c>MethodFlags.Abstract</c>).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.MethodDeclaringType(System.String,System.String)">
+            <summary>The type that declares the method (the base type for inherited lookups), or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.MethodBase(System.String,System.String)">
+            <summary>The base definition of the method — the "Type.Method" root of an override chain — or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.FieldType(System.String,System.String)">
+            <summary>The field's declared type name ("int32", ...), or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.FieldStatic(System.String,System.String)">
+            <summary>True when the field is static.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.FieldDeclaringType(System.String,System.String)">
+            <summary>The type that declares the field, or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Invoke(System.String,System.String,System.Object,System.Object[])">
+            <summary>
+            Invokes a method by name through a runtime. For static methods the
+            receiver is ignored; for instance methods it must be the object handle
+            returned by a previous call (VM-internal objects round-trip as handles).
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.GetStatic(System.String,System.String)">
+            <summary>Reads a static field by qualified name ("Type.field").</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.SetStatic(System.String,System.String,System.Object)">
+            <summary>Writes a static field by qualified name ("Type.field").</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.IReflectHost.Call(System.String,System.String,System.Object[])">
+            <summary>Invokes a static method by qualified name ("Type.Method").</summary>
+        </member>
+        <member name="T:Contract.Compiler.StandardLibrary.ReflectModule">
+            <summary>
+            In-language reflection: <c>Reflect.Types()</c>, <c>Reflect.Methods("Foo")</c>,
+            <c>Reflect.GetStatic(...)</c>, <c>Reflect.Call(...)</c>, <c>Reflect.Invoke(...)</c>,
+            <c>Reflect.Hierarchy("Foo")</c>, ... — runtime introspection over the loaded
+            module. The host (a ContractRuntime) sets <see cref="P:Contract.Compiler.StandardLibrary.ReflectModule.Host"/>; without one
+            every call returns empty/false/null. This is a Contract-specific binding —
+            the generic stdlib stays free of it.
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.StandardLibrary.ReflectModule.Host">
+            <summary>The host providing module metadata + static access, set by the runtime.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Types">
+            <summary>Every type in the loaded module (qualified wire names).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.HasType(System.String)">
+            <summary>True when a type with this (short or qualified) name exists.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Methods(System.String)">
+            <summary>Qualified names ("Type.Method") of a type's methods, including inherited.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Fields(System.String)">
+            <summary>Qualified names ("Type.field") of a type's fields, including inherited.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Base(System.String)">
+            <summary>The direct base type's wire name, or "" when none.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.ModuleName">
+            <summary>The loaded module's name, or "" when nothing is loaded.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Kind(System.String)">
+            <summary>The type's kind: "Class" / "Interface" / "Struct" / "Enum", or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.IsClass(System.String)">
+            <summary>True when the type is a class (TypeKind.Class).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.IsInterface(System.String)">
+            <summary>True when the type is an interface (TypeKind.Interface).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.IsStruct(System.String)">
+            <summary>True when the type is a struct (TypeKind.Struct).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.IsEnum(System.String)">
+            <summary>True when the type is an enum (TypeKind.Enum).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.IsAbstract(System.String)">
+            <summary>True when the type is abstract (IR TypeFlags.Abstract).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.IsSealed(System.String)">
+            <summary>True when the type is sealed (IR TypeFlags.Sealed).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Access(System.String)">
+            <summary>The type's declared access: "Public" / "Private" / "Protected" / "Internal".</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Interfaces(System.String)">
+            <summary>Direct interfaces implemented by the type, by name (external ones as "").</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.AllInterfaces(System.String)">
+            <summary>All interfaces implemented by the type, including inherited ones.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Hierarchy(System.String)">
+            <summary>This type and all its bases, most-derived first.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.IsSubclassOf(System.String,System.String)">
+            <summary>True when typeName transitively inherits from baseTypeName.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.IsAssignableFrom(System.String,System.String)">
+            <summary>True when otherTypeName is typeName, a subclass of it, or (for interfaces) an implementor of it.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Resolve(System.String)">
+            <summary>Resolves "Type.Method" through inheritance — most-derived wins — to its canonical "DeclaringType.Method" form, or "" when unresolvable.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.DeclaredMethods(System.String)">
+            <summary>Methods declared on the type itself (not inherited), as "Type.Method".</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.DeclaredFields(System.String)">
+            <summary>Fields declared on the type itself (not inherited), as "Type.field".</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Attributes(System.String)">
+            <summary>Attributes applied to the type, as "Name(arg, ...)" strings.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.MethodAttributes(System.String,System.String)">
+            <summary>Attributes applied to a method, as "Name(arg, ...)" strings.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.MethodReturn(System.String,System.String)">
+            <summary>The method's declared return type name ("int32", "string", "void", ...), or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.MethodParams(System.String,System.String)">
+            <summary>The method's parameters as "type name" strings ("int32 x"), or empty when unknown. Instance methods include "this" as parameter 0.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.MethodStatic(System.String,System.String)">
+            <summary>True when the method is static.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.MethodVirtual(System.String,System.String)">
+            <summary>True when the method is virtual (IR MethodFlags.Virtual).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.MethodOverride(System.String,System.String)">
+            <summary>True when the method is an override (IR MethodFlags.Override).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.MethodAbstract(System.String,System.String)">
+            <summary>True when the method is abstract (IR MethodFlags.Abstract).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.MethodDeclaringType(System.String,System.String)">
+            <summary>The type that declares the method (the base type for inherited lookups), or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.MethodBase(System.String,System.String)">
+            <summary>The base definition of the method — the "Type.Method" root of an override chain — or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.FieldType(System.String,System.String)">
+            <summary>The field's declared type name ("int32", ...), or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.FieldStatic(System.String,System.String)">
+            <summary>True when the field is static.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.FieldDeclaringType(System.String,System.String)">
+            <summary>The type that declares the field, or "" when unknown.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.GetStatic(System.String,System.String)">
+            <summary>Reads a static field by type name + field name.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.SetStatic(System.String,System.String,System.Object)">
+            <summary>Writes a static field by type name + field name.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Call(System.String,System.String,System.Object[])">
+            <summary>Invokes a static method by type name + method name with args.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.ReflectModule.Invoke(System.String,System.String,System.Object,System.Object[])">
+            <summary>
+            Invokes a method by type name + method name with a receiver and args.
+            For static methods the receiver is ignored; for instance methods it
+            must be the handle returned by a previous call (e.g. from
+            <c>Reflect.Call</c>).
+            </summary>
+        </member>
+        <member name="T:Contract.Compiler.StandardLibrary.StdlibCatalog">
+            <summary>
+            Registers the <c>ObjektRT.Stdlib</c> modules into a
+            <see cref="T:Contract.Compiler.StandardLibrary.SymbolTable"/>. The stdlib project itself is free of
+            Contract-specific attributes — this catalog is the Contract-side mapping
+            from language module names to CLR types. Each module is registered under
+            its fully-qualified dotted name (so <c>ObjektRT.Stdlib.System.IO.Println</c>
+            and <c>import ObjektRT.Stdlib.System;</c> short forms resolve) and under
+            its short name (so <c>IO.Println</c> works without an import). Hosts
+            register the same types with the runtime's generic <c>RegisterClrType</c>.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.SymbolTable.ImportNamespace(System.String)">
+            <summary>
+            Imports a namespace (e.g. "ObjektRT.Stdlib.System") so its modules
+            become addressable by their short, last-segment name ("IO").
+            </summary>
+        </member>
+        <member name="P:Contract.Compiler.StandardLibrary.SymbolTable.UsedImportedNamespaces">
+            <summary>
+            The imported namespaces that actually resolved a short module name
+            during this compilation. Lets the analyzer flag unused imports.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.SymbolTable.RegisterExternalType(System.String,System.Type)">
+            <summary>
+            Registers a CLR type's public static methods as an external module
+            under the given (possibly dotted) name. Generic — used by the stdlib
+            catalog so the official stdlib stays free of Contract-specific
+            attributes.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.SymbolTable.ResolveModuleName(System.String)">
+            <summary>Resolves a possibly-short module name to its fully-registered name (honoring namespace imports).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.SymbolTable.IsBoundModule(System.String)">
+            <summary>True when <paramref name="className"/> is a bound external stdlib module (IO, Math, ...).</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.SymbolTable.IsUserContract(System.String)">
+            <summary>True when <paramref name="name"/> is a user-declared contract in this compilation.</summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.SymbolTable.GetExternalMethods(System.String)">
+            <summary>All external methods registered for a stdlib module (e.g. all of IO's methods).</summary>
+        </member>
+        <member name="T:Contract.Compiler.StandardLibrary.TypeLoader">
+            <summary>
+            Tolerant assembly type enumeration. <see cref="M:System.Reflection.Assembly.GetTypes"/> throws
+            <see cref="T:System.Reflection.ReflectionTypeLoadException"/> when a referenced assembly (or one
+            of its dependencies) can't be loaded — common for host binding assemblies
+            that depend on UI frameworks which aren't present in a compiler/runtime
+            process. This returns the types that *did* load, dropping the rest, so
+            registration of the remaining bindings still succeeds.
+            </summary>
+        </member>
+        <member name="M:Contract.Compiler.StandardLibrary.TypeLoader.GetLoadableTypes(System.Reflection.Assembly)">
+            <summary>Returns the loadable types of an assembly, skipping any that
+            failed to load due to missing dependencies.</summary>
+        </member>
+        <member name="T:Contract.Compiler.TypeNameResolver">
+             <summary>
+             Resolves written type names to their fully-qualified wire names, the way
+             Java/C#/Python namespaces work: namespace imports map a short name (or
+             the first segment of a dotted name) onto a full namespace.
+            
+             Short name <c>Foo</c>:
+             <list type="number">
+             <item>The current contract's own namespace (<c>com.example.Foo</c>).</item>
+             <item>Each namespace import as a prefix (<c>import com.lib;</c> → <c>com.lib.Foo</c>).</item>
+             <item>A unique short-name match anywhere in the program.</item>
+             </list>
+            
+             Dotted name <c>Terminal.Terminal</c>:
+             <list type="number">
+             <item>Already-qualified names pass through when registered.</item>
+             <item>
+             The first segment is mapped through a namespace import
+             (<c>import ovh.finite.hello.Terminal;</c> → <c>ovh.finite.hello.Terminal.Terminal</c>).
+             </item>
+             <item>The whole dotted name is prefixed with each namespace import
+             (<c>import com.lib;</c> + <c>Direction.North</c> → <c>com.lib.Direction.North</c>).</item>
+             </list>
+             </summary>
+        </member>
+        <member name="M:Contract.Compiler.TypeNameResolver.Resolve(System.String,System.Collections.Generic.IReadOnlyList{System.String},System.Func{System.String,System.Boolean},System.String,System.Func{System.String,System.String},System.Action{System.Int32})">
+            <summary>
+            Resolves a possibly-short type name to its fully-qualified wire name.
+            </summary>
+            <param name="name">The written type name (short or dotted).</param>
+            <param name="namespaceImports">The program's namespace imports, in order.</param>
+            <param name="hasType">True when a type with the given qualified name is registered.</param>
+            <param name="currentNamespace">The current contract's namespace, or null.</param>
+            <param name="uniqueShortMatch">The single qualified name for a short name, or null when ambiguous/absent.</param>
+            <param name="onImportUsed">
+            Invoked with the index (into <paramref name="namespaceImports"/>) of each
+            import that actually resolved a short/first-segment name — lets the
+            analyzer flag unused imports.
+            </param>
+        </member>
+    </members>
+</doc>

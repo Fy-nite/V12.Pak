@@ -1,0 +1,324 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>ObjektRT.Stdlib</name>
+    </assembly>
+    <members>
+        <member name="T:ObjektRT.Stdlib.Generics.Array">
+            <summary>Array helpers over object-backed arrays. A generic ObjektRT stdlib module.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Array.Length(System.Object)">
+            <summary>Number of elements in the array.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Array.Get(System.Object,System.Int32)">
+            <summary>Returns the element at the given index.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Array.Set(System.Object,System.Int32,System.Object)">
+            <summary>Sets the element at the given index.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Array.Join(System.Object,System.String)">
+            <summary>Joins the elements of a string array into one string with <paramref name="separator"/> between them.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.Generics.Dict">
+            <summary>
+            Dict helpers over object-backed dictionaries. A generic ObjektRT stdlib
+            module. The runtime stores dicts as opaque object handles.
+            </summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Dict.Create">
+            <summary>Creates a new empty dictionary.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Dict.Set(System.Object,System.Object,System.Object)">
+            <summary>Associates <paramref name="key"/> with <paramref name="value"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Dict.Get(System.Object,System.Object)">
+            <summary>Returns the value for <paramref name="key"/>, or null when absent.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Dict.ContainsKey(System.Object,System.Object)">
+            <summary>True when <paramref name="dict"/> contains <paramref name="key"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Dict.Remove(System.Object,System.Object)">
+            <summary>Removes <paramref name="key"/>; returns true when it was present.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Dict.Keys(System.Object)">
+            <summary>Returns an array of all keys in <paramref name="dict"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.Dict.Count(System.Object)">
+            <summary>Number of entries in <paramref name="dict"/>.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.Generics.List">
+            <summary>
+            List helpers over object-backed lists. A generic ObjektRT stdlib module.
+            The runtime stores lists as opaque object handles.
+            </summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.List.Create">
+            <summary>Creates a new empty list.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.List.Add(System.Object,System.Object)">
+            <summary>Appends <paramref name="item"/> to the end of <paramref name="list"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.List.Get(System.Object,System.Int32)">
+            <summary>Returns the element at <paramref name="index"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.List.Set(System.Object,System.Int32,System.Object)">
+            <summary>Replaces the element at <paramref name="index"/> with <paramref name="item"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.List.Count(System.Object)">
+            <summary>Number of elements in <paramref name="list"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Generics.List.RemoveAt(System.Object,System.Int32)">
+            <summary>Removes the element at <paramref name="index"/>.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.Math.Numbers">
+            <summary>Numeric helpers. A generic ObjektRT stdlib module.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Abs(System.Int32)">
+            <summary>Absolute value of an integer.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.AbsF(System.Single)">
+            <summary>Absolute value of a float.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Sqrt(System.Single)">
+            <summary>Square root of a float.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Min(System.Int32,System.Int32)">
+            <summary>The smaller of two integers.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Max(System.Int32,System.Int32)">
+            <summary>The larger of two integers.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.MinF(System.Single,System.Single)">
+            <summary>The smaller of two floats.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.MaxF(System.Single,System.Single)">
+            <summary>The larger of two floats.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Pow(System.Single,System.Single)">
+            <summary>Raises x to the power y.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Floor(System.Single)">
+            <summary>Largest integer less than or equal to value.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Ceiling(System.Single)">
+            <summary>Smallest integer greater than or equal to value.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Round(System.Single)">
+            <summary>Rounds to the nearest integer.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Sin(System.Single)">
+            <summary>Sine of an angle in radians.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Cos(System.Single)">
+            <summary>Cosine of an angle in radians.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Tan(System.Single)">
+            <summary>Tangent of an angle in radians.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Log(System.Single)">
+            <summary>Natural logarithm of value.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Log10(System.Single)">
+            <summary>Base-10 logarithm of value.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Math.Numbers.Exp(System.Single)">
+            <summary>e raised to the power value.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.System.Convert">
+            <summary>Type conversion helpers. A generic ObjektRT stdlib module.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToInt32(System.String)">
+            <summary>Parses <paramref name="value"/> as a base-10 integer.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToString(System.Int32)">
+            <summary>Formats an integer as a string.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToStringF(System.Single)">
+            <summary>Formats a float as a string using the invariant culture (always '.' as the decimal separator).</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToStringD(System.Double)">
+            <summary>Formats a double as a string using the invariant culture (always '.' as the decimal separator).</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToInt32D(System.Double)">
+            <summary>Truncates a double to an integer.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToStringB(System.Boolean)">
+            <summary>Formats a bool as "True" or "False".</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToFloat32(System.String)">
+            <summary>Parses <paramref name="value"/> as a float.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToInt32F(System.Single)">
+            <summary>Truncates a float to an integer.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToFloat32I(System.Int32)">
+            <summary>Converts an integer to a float.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Convert.ToBool(System.String)">
+            <summary>Parses <paramref name="value"/> as "true" or "false" (case-insensitive).</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.System.Debug">
+            <summary>Assertions. A generic ObjektRT stdlib module.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Debug.Assert(System.Boolean,System.String)">
+            <summary>Asserts that <paramref name="condition"/> is true, failing with <paramref name="message"/> otherwise.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.System.Environment">
+            <summary>OS environment access. A generic ObjektRT stdlib module.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Environment.GetEnv(System.String)">
+            <summary>Returns the value of the environment variable <paramref name="name"/>, or "" when unset.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Environment.Exit(System.Int32)">
+            <summary>Terminates the process with the given exit <paramref name="code"/>.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.System.File">
+            <summary>File system I/O. A generic ObjektRT stdlib module.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.File.ReadAllText(System.String)">
+            <summary>Reads the entire file at <paramref name="path"/> as a string.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.File.WriteAllText(System.String,System.String)">
+            <summary>Writes <paramref name="contents"/> to the file at <paramref name="path"/> (overwrites).</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.File.Exists(System.String)">
+            <summary>True when a file exists at <paramref name="path"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.File.ReadAllLines(System.String)">
+            <summary>Reads all lines of the file at <paramref name="path"/> as an array of strings.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.File.Copy(System.String,System.String)">
+            <summary>Copies the file at <paramref name="src"/> to <paramref name="dst"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.File.Move(System.String,System.String)">
+            <summary>Moves the file at <paramref name="src"/> to <paramref name="dst"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.File.Delete(System.String)">
+            <summary>Deletes the file at <paramref name="path"/>.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.System.GC">
+            <summary>Garbage collection control. A generic ObjektRT stdlib module.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.GC.Collect">
+            <summary>Requests a garbage collection.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.System.IO">
+            <summary>
+            Console input/output. A generic ObjektRT stdlib module — hosts register it
+            under any name (e.g. "ObjektRT.Stdlib.System.IO" or a short alias) via the
+            runtime's CLR type registry.
+            </summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.IO.Print(System.Object)">
+            <summary>Prints a value to standard output without a trailing newline.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.IO.Println(System.Object)">
+            <summary>Prints a value to standard output followed by a newline.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.IO.Readln">
+            <summary>Reads a single line from standard input ("" on EOF).</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.System.Random">
+            <summary>Random number helpers. A generic ObjektRT stdlib module.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Random.NextInt(System.Int32)">
+            <summary>Random integer in [0, <paramref name="max"/>).</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Random.NextFloat">
+            <summary>Random float in [0.0, 1.0).</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.System.String">
+            <summary>
+            String helpers. A generic ObjektRT stdlib module — the language's string
+            '+' operator lowers to <see cref="M:ObjektRT.Stdlib.System.String.Concat(System.String,System.String)"/>.
+            </summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.Length(System.String)">
+            <summary>Returns the number of characters in <paramref name="str"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.Concat(System.String,System.String)">
+            <summary>Concatenates two strings. This is also what the language's '+' operator on strings lowers to.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.Substring(System.String,System.Int32,System.Int32)">
+            <summary>Returns the substring of <paramref name="str"/> starting at <paramref name="start"/> with the given <paramref name="length"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.IndexOf(System.String,System.String)">
+            <summary>Returns the zero-based index of the first occurrence of <paramref name="sub"/> in <paramref name="str"/>, or -1 when not found.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.StartsWith(System.String,System.String)">
+            <summary>True when <paramref name="str"/> starts with <paramref name="prefix"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.EndsWith(System.String,System.String)">
+            <summary>True when <paramref name="str"/> ends with <paramref name="suffix"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.Trim(System.String)">
+            <summary>Removes leading and trailing whitespace from <paramref name="str"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.ToUpper(System.String)">
+            <summary>Returns <paramref name="str"/> with all characters converted to upper case.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.ToLower(System.String)">
+            <summary>Returns <paramref name="str"/> with all characters converted to lower case.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.Replace(System.String,System.String,System.String)">
+            <summary>Replaces every occurrence of <paramref name="old"/> in <paramref name="str"/> with <paramref name="new_"/>.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.String.Split(System.String,System.String)">
+            <summary>Splits <paramref name="str"/> into an array of substrings separated by <paramref name="separator"/>.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.System.Time">
+            <summary>Timestamps and formatting. A generic ObjektRT stdlib module.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Time.Now">
+            <summary>Current UTC time as Unix milliseconds (since 1970-01-01).</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.System.Time.Format(System.Int64,System.String)">
+            <summary>Formats a Unix-millisecond <paramref name="timestamp"/> using a .NET date/time <paramref name="format"/> string.</summary>
+        </member>
+        <member name="T:ObjektRT.Stdlib.Threading.Thread">
+             <summary>
+             Threading helpers. A generic ObjektRT stdlib module.
+            
+             Two styles are provided:
+              - <see cref="M:ObjektRT.Stdlib.Threading.Thread.Spawn(System.Object)"/> — fire-and-forget: run a delegate on a background
+                thread and don't keep a reference to it.
+              - <see cref="M:ObjektRT.Stdlib.Threading.Thread.Create(System.Object)"/> + <see cref="M:ObjektRT.Stdlib.Threading.Thread.Start(System.Object)"/> + <see cref="M:ObjektRT.Stdlib.Threading.Thread.Join(System.Object)"/> +
+                <see cref="M:ObjektRT.Stdlib.Threading.Thread.IsAlive(System.Object)"/> — C#-style lifecycle: a thread is a value you
+                can store in a variable, start explicitly, wait on, and poll.
+            
+             The methods that touch the VM (Create/Start/Join/IsAlive/Spawn) are
+             host-provided: the runtime registers native bindings under these names
+             that take precedence at dispatch time. These stubs exist so language
+             compilers can bind the calls at compile time.
+             </summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Threading.Thread.Sleep(System.Int32)">
+            <summary>Suspends the current thread for the given number of milliseconds.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Threading.Thread.Spawn(System.Object)">
+            <summary>
+            Runs the delegate on a new background thread. The runtime host
+            registers a real native binding for "Thread.Spawn" that runs the
+            delegate on a fresh interpreter sharing the module state; that native
+            binding takes precedence at dispatch time. This stub exists so language
+            compilers can bind the call at compile time.
+            </summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Threading.Thread.Create(System.Object)">
+            <summary>
+            Creates a thread for <paramref name="work"/> (a delegate) and returns
+            a handle you can store in a variable. Nothing runs until
+            <see cref="M:ObjektRT.Stdlib.Threading.Thread.Start(System.Object)"/> is called. Host-provided.
+            </summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Threading.Thread.Start(System.Object)">
+            <summary>Starts a thread created with <see cref="M:ObjektRT.Stdlib.Threading.Thread.Create(System.Object)"/>. Host-provided.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Threading.Thread.Join(System.Object)">
+            <summary>Blocks the calling thread until the given thread finishes. Host-provided.</summary>
+        </member>
+        <member name="M:ObjektRT.Stdlib.Threading.Thread.IsAlive(System.Object)">
+            <summary>True while the given thread is running. Host-provided.</summary>
+        </member>
+    </members>
+</doc>

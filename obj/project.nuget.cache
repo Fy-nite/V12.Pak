@@ -1,17 +1,35 @@
 {
   "version": 2,
-  "dgSpecHash": "kkqhGPmt9Co=",
+  "dgSpecHash": "DqLtn4VF558=",
   "success": true,
-  "projectFilePath": "D:\\git\\locus\\libs\\V12.Pak\\V12.Pak.csproj",
+  "projectFilePath": "C:\\Users\\charlie\\Desktop\\V12.Samplegame\\libs\\V12.Pak\\V12.Pak.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\charlie\\.nuget\\packages\\assimpnetter\\6.0.4\\assimpnetter.6.0.4.nupkg.sha512",
     "C:\\Users\\charlie\\.nuget\\packages\\bepuphysics\\2.5.0-beta.29\\bepuphysics.2.5.0-beta.29.nupkg.sha512",
     "C:\\Users\\charlie\\.nuget\\packages\\bepuutilities\\2.5.0-beta.29\\bepuutilities.2.5.0-beta.29.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\humanizer.core\\2.14.1\\humanizer.core.2.14.1.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\json.more.net\\2.0.1.2\\json.more.net.2.0.1.2.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\jsonpointer.net\\5.0.0\\jsonpointer.net.5.0.0.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\jsonschema.net\\7.0.3\\jsonschema.net.7.0.3.nupkg.sha512",
     "C:\\Users\\charlie\\.nuget\\packages\\litenetlib\\1.1.0\\litenetlib.1.1.0.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\microsoft.codeanalysis.analyzers\\3.3.4\\microsoft.codeanalysis.analyzers.3.3.4.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\microsoft.codeanalysis.common\\4.11.0\\microsoft.codeanalysis.common.4.11.0.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\microsoft.codeanalysis.csharp\\4.11.0\\microsoft.codeanalysis.csharp.4.11.0.nupkg.sha512",
     "C:\\Users\\charlie\\.nuget\\packages\\mongodb.bson\\2.25.0\\mongodb.bson.2.25.0.nupkg.sha512",
     "C:\\Users\\charlie\\.nuget\\packages\\moonsharp\\2.0.0\\moonsharp.2.0.0.nupkg.sha512",
+    "C:\\Users\\charlie\\.nuget\\packages\\newtonsoft.json\\13.0.4\\newtonsoft.json.13.0.4.nupkg.sha512",
     "C:\\Users\\charlie\\.nuget\\packages\\serilog\\4.4.0\\serilog.4.4.0.nupkg.sha512",
     "C:\\Users\\charlie\\.nuget\\packages\\serilog.sinks.console\\6.1.1\\serilog.sinks.console.6.1.1.nupkg.sha512"
   ],
-  "logs": []
+  "logs": [
+    {
+      "code": "NU1900",
+      "level": "Warning",
+      "message": "Error occurred while getting package vulnerability data: Unable to load the service index for source https://forgejo.finite.ovh/api/packages/Finite/nuget/index.json.",
+      "projectPath": "C:\\Users\\charlie\\Desktop\\V12.Samplegame\\libs\\V12.Pak\\V12.Pak.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\charlie\\Desktop\\V12.Samplegame\\libs\\V12.Pak\\V12.Pak.csproj",
+      "targetGraphs": []
+    }
+  ]
 }

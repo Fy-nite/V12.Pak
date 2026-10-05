@@ -1,0 +1,22 @@
+<Project>
+
+  <!--
+    This repository links V12.Pak against the engine it already builds (the copy
+    inside the V12.Basic submodule at libs/V12.basic/libs/V12), instead of the
+    sibling ..\V12-engine\V12.csproj the V12.Pak repo expects by default.
+
+    Reason: referencing the repo's sibling engine would compile a SECOND V12
+    assembly alongside the one V12.Basic uses, which breaks type identity (two
+    V12.Core.GameRoot types) and fails the build.
+
+    This file is intentionally untracked in the V12.Pak submodule (it is specific
+    to this consuming repo). Upstreaming a configurable engine-path property
+    (e.g. $(V12EngineProject)) would let this override be dropped.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Remove="..\V12-engine\V12.csproj" />
+    <ProjectReference Include="..\V12.basic\libs\V12\V12.csproj" />
+  </ItemGroup>
+
+</Project>
