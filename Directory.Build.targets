@@ -2,7 +2,7 @@
 
   <!--
     This repository links V12.Pak against the engine it already builds (the copy
-    inside the V12.Basic submodule at libs/V12.basic/libs/V12), instead of the
+    inside the V12.Basic submodule at libs/V12.Basic/libs/V12), instead of the
     sibling ..\V12-engine\V12.csproj the V12.Pak repo expects by default.
 
     Reason: referencing the repo's sibling engine would compile a SECOND V12
