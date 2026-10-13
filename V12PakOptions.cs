@@ -16,6 +16,14 @@ namespace V12.Pak
         public bool LoadDlls { get; set; } = false;
 
         /// <summary>
+        /// Whether to compile and run Contract (<c>.ct</c>) / load precompiled
+        /// ObjektRT (<c>.orbt</c>) script gamepaks declared in the manifest.
+        /// Default: false. Compiling/running scripts executes arbitrary code, so
+        /// it sits in the same trust tier as <see cref="LoadDlls"/>.
+        /// </summary>
+        public bool LoadContractScripts { get; set; } = false;
+
+        /// <summary>
         /// File extensions allowed to be imported as assets.
         /// Null = allow all extensions. Empty set = block all assets.
         /// Checked against the archive path of each asset in the manifest.

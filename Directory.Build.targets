@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Remove="..\V12-engine\V12.csproj" />
     <ProjectReference Include="..\V12.basic\libs\V12\V12.csproj" />
+    <ProjectReference Include="..\V12.basic\libs\V12.Bindings\V12.Bindings.csproj" />
   </ItemGroup>
 
 </Project>

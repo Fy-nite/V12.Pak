@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using V12.Bindings;
 using V12.Core;
 using V12.Core.Interfaces;
 using V12.WorldML;
@@ -181,6 +182,50 @@ namespace V12.Pak
                     }
                 }
             }
+
+            // Load script gamepaks: Contract sources (.ct) and precompiled ObjektRT
+            // modules (.orbt/.oil/.oir). Each is wrapped as a gamepak and registered
+            // with the engine so GameRoot.Gamepaks drives its two-phase lifecycle.
+            if (options.LoadContractScripts)
+            {
+                var gameRoot = Core.GameRoot.Instance;
+                foreach (string script in _reader.Manifest.Scripts)
+                {
+                    try
+                    {
+                        string? scriptPath = _reader.GetEntryPath(script);
+                        if (scriptPath == null)
+                        {
+                            _results.Add(new V12PakLoaderResult
+                            {
+                                Type = V12PakLoaderResultType.Error,
+                                Message = $"Script entry not found: {script}"
+                            });
+                            continue;
+                        }
+
+                        string name = Path.GetFileNameWithoutExtension(script);
+                        IV12Gamepack gamepack = ObjektRTModuleLoader.IsCompiledScript(scriptPath)
+                            ? new ObjektRTGamepak(scriptPath, name)
+                            : new ContractGamepack(scriptPath, name);
+                        gameRoot?.Gamepaks.Add(gamepack);
+
+                        _results.Add(new V12PakLoaderResult
+                        {
+                            Type = V12PakLoaderResultType.ScriptLoaded,
+                            Message = $"Registered script gamepak: {script}"
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _results.Add(new V12PakLoaderResult
+                        {
+                            Type = V12PakLoaderResultType.Error,
+                            Message = $"Failed to load script '{script}': {ex.Message}"
+                        });
+                    }
+                }
+            }
         }
 
         public void Dispose()
@@ -207,6 +252,7 @@ namespace V12.Pak
         ResolverMounted,
         WorldLoaded,
         DllLoaded,
+        ScriptLoaded,
         Error
     }
 }

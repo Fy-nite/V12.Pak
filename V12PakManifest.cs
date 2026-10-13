@@ -35,6 +35,15 @@ namespace V12.Pak
         [JsonPropertyName("paks")]
         public List<string> Paks { get; set; } = new();
 
+        /// <summary>
+        /// Archive paths to script gamepaks: Contract sources (<c>.ct</c>) and
+        /// precompiled ObjektRT modules (<c>.orbt</c>/<c>.oil</c>/<c>.oir</c>).
+        /// Loaded via <c>ContractGamepack</c>/<c>ObjektRTGamepak</c> when
+        /// <see cref="V12PakOptions.LoadContractScripts"/> is set.
+        /// </summary>
+        [JsonPropertyName("scripts")]
+        public List<string> Scripts { get; set; } = new();
+
         /// <summary>Optional description of this pak.</summary>
         [JsonPropertyName("description")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

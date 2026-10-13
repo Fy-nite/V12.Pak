@@ -116,12 +116,14 @@ namespace V12.Pak
 
                 manifest.Worlds.Add(worldEntry);
 
-                // Add all files from the world directory
-                AddDirectory(string.IsNullOrEmpty(relativeDir) ? "worlds/" + worldName : "worlds/" + relativeDir, worldDir);
+                // Add all files from the world directory. Archive root mirrors the
+                // source layout (relativeDir already includes "worlds/{World}"),
+                // so it matches worldEntry.Entry.
+                AddDirectory(string.IsNullOrEmpty(relativeDir) ? "worlds/" + worldName : relativeDir, worldDir);
             }
 
             // Scan for asset directories
-            string[] assetDirs = { "meshes", "textures", "scripts", "audio", "fonts" };
+            string[] assetDirs = { "meshes", "textures", "audio", "fonts" };
             foreach (string assetType in assetDirs)
             {
                 string assetDir = Path.Combine(gameDir, assetType);
@@ -140,6 +142,21 @@ namespace V12.Pak
                         string pakPath = pakAssetDir + "/" + relativePath;
                         string assetKey = assetType + "/" + relativePath;
                         manifest.Assets[assetKey] = NormalizePath(pakPath);
+                    }
+                }
+            }
+
+            // Scan for script gamepaks: Contract sources + precompiled ObjektRT modules
+            string scriptsDir = Path.Combine(gameDir, "scripts");
+            if (Directory.Exists(scriptsDir))
+            {
+                foreach (string pattern in new[] { "*.ct", "*.orbt", "*.oil", "*.oir" })
+                {
+                    foreach (string file in Directory.EnumerateFiles(scriptsDir, pattern, SearchOption.AllDirectories))
+                    {
+                        string relative = Path.GetRelativePath(normalizedRoot, file).Replace('\\', '/');
+                        manifest.Scripts.Add(relative);
+                        AddFileFromDisk(relative, file);
                     }
                 }
             }
