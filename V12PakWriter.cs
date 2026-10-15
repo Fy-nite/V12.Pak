@@ -146,6 +146,25 @@ namespace V12.Pak
                 }
             }
 
+            // Pack a top-level Assets/ directory verbatim (source layout
+            // preserved), so content packs — e.g. a Minecraft-style texture
+            // pack under Assets/textures/** — ship inside the pak and stay
+            // addressable as "Assets/..." relative to the mounted pak root.
+            string assetsRootDir = Path.Combine(gameDir, "Assets");
+            if (Directory.Exists(assetsRootDir))
+            {
+                AddDirectory("Assets", assetsRootDir);
+
+                foreach (string filePath in Directory.EnumerateFiles(assetsRootDir, "*", SearchOption.AllDirectories))
+                {
+                    string relativePath = filePath.Substring(assetsRootDir.Length)
+                        .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        .Replace('\\', '/');
+
+                    manifest.Assets["Assets/" + relativePath] = NormalizePath("Assets/" + relativePath);
+                }
+            }
+
             // Scan for script gamepaks: Contract sources + precompiled ObjektRT modules
             string scriptsDir = Path.Combine(gameDir, "scripts");
             if (Directory.Exists(scriptsDir))

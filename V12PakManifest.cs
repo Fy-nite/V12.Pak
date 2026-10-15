@@ -58,6 +58,9 @@ namespace V12.Pak
         {
             WriteIndented = true,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            // Paks written by older SDK builds emitted PascalCase keys
+            // ("Worlds"/"Scripts"). Accept both so old archives still load.
+            PropertyNameCaseInsensitive = true,
         };
 
         public byte[] ToJson() => JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions);
