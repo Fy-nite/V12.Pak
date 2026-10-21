@@ -1,23 +1,23 @@
 <Project>
 
   <!--
-    This repository links V12.Pak against the engine it already builds (the copy
-    inside the V12.Basic submodule at libs/V12.Basic/libs/V12), instead of the
-    sibling ..\V12-engine\V12.csproj the V12.Pak repo expects by default.
-
-    Reason: referencing the repo's sibling engine would compile a SECOND V12
-    assembly alongside the one V12.Basic uses, which breaks type identity (two
-    V12.Core.GameRoot types) and fails the build.
-
-    This file is intentionally untracked in the V12.Pak submodule (it is specific
-    to this consuming repo). Upstreaming a configurable engine-path property
-    (e.g. $(V12EngineProject)) would let this override be dropped.
+    Use absolute paths so V12.Pak resolves V12 and V12.Bindings regardless of build location.
+    This avoids Directory.Build.targets path resolution issues when building the submodule standalone.
   -->
+
+  <PropertyGroup>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Remove="..\V12-engine\V12.csproj" />
-    <ProjectReference Include="..\V12.basic\libs\V12\V12.csproj" />
-    <ProjectReference Include="..\V12.basic\libs\V12.Bindings\V12.Bindings.csproj" />
+    <ProjectReference Include="D:\git\V12Studio\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
+    <ProjectReference Include="D:\git\V12Studio\libs\nova\libs\V12.Basic\libs\V12.Bindings\V12.Bindings.csproj" />
+  </ItemGroup>
+
+  <!-- Don't compile the nested engine source files — they're pulled from Nova instead -->
+  <ItemGroup>
+    <Compile Remove="libs/V12-engine/**" />
   </ItemGroup>
 
 </Project>
