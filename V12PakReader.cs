@@ -62,6 +62,10 @@ namespace V12.Pak
                 {
                     if (entry.EntryType is TarEntryType.Directory or TarEntryType.GlobalExtendedAttributes) continue;
                     if (string.IsNullOrEmpty(entry.Name)) continue;
+                    // PAX/other metadata entries carry no payload; older archives
+                    // also contain them, so skip them instead of dereferencing a
+                    // null DataStream.
+                    if (entry.DataStream == null) continue;
 
                     string? safeName = SanitizeEntryName(entry.Name);
                     if (safeName == null)
