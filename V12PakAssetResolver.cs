@@ -1,103 +1,86 @@
-using System;
-using System.IO;
 using V12.Core.Interfaces;
 
 namespace V12.Pak
 {
     /// <summary>
-    /// IAssetResolver implementation that reads from a V12PakReader.
-    /// Falls back to an optional inner resolver for loose files on disk.
+    /// <see cref="IAssetResolver"/> that serves assets from a <see cref="V12PakReader"/>.
+    ///
+    /// <c>v12://</c> URIs resolve through the manifest's asset map first
+    /// (virtual key → archive path → extracted temp path), then through world
+    /// mount points. Because the reader materializes the archive to disk,
+    /// <see cref="Resolve"/> returns real readable file paths, so the engine's
+    /// path-based consumers (script components, texture loaders) work unchanged.
     /// </summary>
-    public class V12PakAssetResolver : IAssetResolver
+    public sealed class V12PakAssetResolver : IAssetResolver
     {
         private readonly V12PakReader _reader;
-        private readonly IAssetResolver? _fallback;
-        private readonly V12PakOptions _options;
+        private readonly Dictionary<string, string> _assetMap;
+        private readonly Dictionary<string, string> _mounts = new(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>The pak reader this resolver reads from.</summary>
-        public V12PakReader Reader => _reader;
-
-        public V12PakAssetResolver(V12PakReader reader, V12PakOptions? options = null, IAssetResolver? fallback = null)
+        public V12PakAssetResolver(V12PakReader reader, IReadOnlyDictionary<string, string> assets)
         {
-            _reader = reader ?? throw new ArgumentNullException(nameof(reader));
-            _options = options ?? V12PakOptions.FullTrust;
-            _fallback = fallback;
-        }
-
-        public string Resolve(string uri)
-        {
-            if (string.IsNullOrEmpty(uri))
-                return uri;
-
-            // Extract the asset path from v12:// URIs
-            string? assetKey = ExtractAssetKey(uri);
-            if (assetKey != null && _reader.Manifest.Assets.TryGetValue(assetKey, out string? pakPath))
-            {
-                if (!_options.IsAssetAllowed(pakPath, assetKey))
-                    return uri; // Blocked by options
-
-                // Check if the entry is extracted
-                string? diskPath = _reader.GetEntryPath(pakPath);
-                if (diskPath != null)
-                    return diskPath;
-            }
-
-            // Fall back to inner resolver (loose files)
-            return _fallback?.Resolve(uri) ?? uri;
-        }
-
-        public Stream Open(string uri)
-        {
-            if (string.IsNullOrEmpty(uri))
-                return Stream.Null;
-
-            // Try pak first
-            string? assetKey = ExtractAssetKey(uri);
-            if (assetKey != null && _reader.Manifest.Assets.TryGetValue(assetKey, out string? pakPath))
-            {
-                if (!_options.IsAssetAllowed(pakPath, assetKey))
-                    return Stream.Null; // Blocked by options
-
-                Stream? stream = _reader.OpenEntry(pakPath);
-                if (stream != null)
-                    return stream;
-            }
-
-            // Fall back to inner resolver
-            if (_fallback != null)
-                return _fallback.Open(uri);
-
-            return Stream.Null;
+            _reader = reader;
+            _assetMap = new Dictionary<string, string>(assets, StringComparer.OrdinalIgnoreCase);
         }
 
         public void Mount(string mountPoint, string physicalPath)
-        {
-            // No-op: pak IS the mount. Fallback handles loose file mounts.
-            _fallback?.Mount(mountPoint, physicalPath);
-        }
+            => _mounts[mountPoint] = physicalPath;
 
         public void Unmount(string mountPoint)
+            => _mounts.Remove(mountPoint);
+
+        /// <summary>
+        /// Resolver consulted when this pak has no match. Set to the previously
+        /// active resolver when a pak is loaded, so a pak can read assets from the
+        /// dependency paks loaded before it.
+        /// </summary>
+        public IAssetResolver? Fallback { get; set; }
+
+        /// <summary>
+        /// Resolve a <c>v12://</c> URI to a physical file path. Returns the URI
+        /// unchanged when nothing matches.
+        /// </summary>
+        public string Resolve(string uri)
         {
-            _fallback?.Unmount(mountPoint);
+            if (string.IsNullOrEmpty(uri)) return uri;
+
+            string key = StripScheme(uri);
+            if (_assetMap.TryGetValue(key, out var archivePath))
+            {
+                var path = _reader.ResolveEntryPath(archivePath);
+                if (path != null) return path;
+            }
+
+            int slash = key.IndexOf('/');
+            if (slash > 0 && _mounts.TryGetValue(key[..slash], out var baseDir))
+            {
+                var candidate = Path.Combine(baseDir, key[(slash + 1)..]);
+                if (File.Exists(candidate)) return candidate;
+            }
+
+            return Fallback?.Resolve(uri) ?? uri;
         }
 
         /// <summary>
-        /// Extracts the asset key from a v12:// URI.
-        /// e.g. "v12://MyWorld/textures/crate.png" → "textures/crate.png"
+        /// Open a <c>v12://</c> URI or archive path as a stream. Returns null
+        /// when the entry does not exist (the interface contract is loosely
+        /// honoured by <see cref="V12AssetResolver"/> the same way).
         /// </summary>
-        private static string? ExtractAssetKey(string uri)
+        public Stream Open(string uri)
         {
-            if (!uri.StartsWith("v12://", StringComparison.OrdinalIgnoreCase))
-                return null;
+            string resolved = Resolve(uri);
+            if (resolved != uri && File.Exists(resolved))
+                return File.OpenRead(resolved);
 
-            string path = uri.Substring(6).TrimStart('/');
+            string key = StripScheme(uri);
+            return _reader.OpenEntry(key) ?? _reader.OpenEntry(uri)!;
+        }
 
-            // Skip the mount point name (first segment)
-            int slashIndex = path.IndexOf('/');
-            if (slashIndex > 0)
-                return path.Substring(slashIndex + 1);
-
-            return null;
+        private static string StripScheme(string uri)
+        {
+            if (uri.StartsWith("v12://", StringComparison.OrdinalIgnoreCase))
+                return uri.Substring(6).TrimStart('/');
+            return uri;
         }
     }
 }

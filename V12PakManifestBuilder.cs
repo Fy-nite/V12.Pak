@@ -6,27 +6,27 @@ namespace V12.Pak
 {
     /// <summary>
     /// Fluent builder for constructing a <see cref="V12PakManifest"/> manually.
-    /// Use this when you want full control over the manifest contents (e.g. from a studio editor)
-    /// rather than auto-detecting from a directory structure.
+    /// Use this when you want full control over the manifest contents (e.g. from
+    /// a studio editor or a build script) rather than auto-detecting from a
+    /// directory structure.
     /// </summary>
     /// <example>
     /// var manifest = V12PakManifestBuilder.Create()
-    ///     .WithDescription("My game pak")
-    ///     .WithAuthor("Me")
     ///     .AddWorld("Forest", "worlds/forest/world.xml")
     ///     .AddAsset("textures/crate.png", "assets/textures/crate.png")
     ///     .AddPak("paks/MyGameplay.dll")
     ///     .Build();
     /// </example>
-    public class V12PakManifestBuilder
+    public sealed class V12PakManifestBuilder
     {
         private int _version = 1;
         private string _engine = "v12";
-        private string? _description;
-        private string? _author;
-        private readonly List<WorldEntry> _worlds = new();
+        private readonly List<V12PakWorldEntry> _worlds = new();
         private readonly Dictionary<string, string> _assets = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _paks = new();
+        private readonly List<string> _scripts = new();
+        private readonly List<string> _csharpScripts = new();
+        private readonly List<string> _dependencies = new();
 
         private V12PakManifestBuilder() { }
 
@@ -39,12 +39,13 @@ namespace V12.Pak
             var b = new V12PakManifestBuilder();
             b._version = manifest.Version;
             b._engine = manifest.Engine;
-            b._description = manifest.Description;
-            b._author = manifest.Author;
             b._worlds.AddRange(manifest.Worlds);
             foreach (var kv in manifest.Assets)
                 b._assets[kv.Key] = kv.Value;
             b._paks.AddRange(manifest.Paks);
+            b._scripts.AddRange(manifest.Scripts);
+            b._csharpScripts.AddRange(manifest.CSharpScripts);
+            b._dependencies.AddRange(manifest.Dependencies);
             return b;
         }
 
@@ -64,35 +65,19 @@ namespace V12.Pak
             return this;
         }
 
-        /// <summary>Set the pak description.</summary>
-        public V12PakManifestBuilder WithDescription(string? description)
-        {
-            _description = description;
-            return this;
-        }
-
-        /// <summary>Set the pak author.</summary>
-        public V12PakManifestBuilder WithAuthor(string? author)
-        {
-            _author = author;
-            return this;
-        }
-
         // ── Worlds ──
 
-        /// <summary>
-        /// Add a world entry.
-        /// </summary>
+        /// <summary>Add a world entry.</summary>
         /// <param name="name">Human-readable world name. Used as the v12:// mount point.</param>
         /// <param name="entry">Path inside the tar archive to world.xml (e.g. "worlds/forest/world.xml").</param>
         /// <param name="templatesDir">Optional path to the templates directory inside the archive.</param>
         public V12PakManifestBuilder AddWorld(string name, string entry, string? templatesDir = null)
         {
-            _worlds.Add(new WorldEntry
+            _worlds.Add(new V12PakWorldEntry
             {
                 Name = name,
                 Entry = NormalizePath(entry),
-                TemplatesDir = templatesDir != null ? NormalizePath(templatesDir) : null
+                TemplatesDir = templatesDir != null ? NormalizePath(templatesDir) : ""
             });
             return this;
         }
@@ -105,13 +90,11 @@ namespace V12.Pak
         }
 
         /// <summary>Get the list of worlds (for inspection/modification before Build).</summary>
-        public List<WorldEntry> Worlds => _worlds;
+        public List<V12PakWorldEntry> Worlds => _worlds;
 
         // ── Assets ──
 
-        /// <summary>
-        /// Add an asset mapping.
-        /// </summary>
+        /// <summary>Add an asset mapping.</summary>
         /// <param name="assetKey">Virtual path resolvable via v12:// (e.g. "textures/crate.png").</param>
         /// <param name="archivePath">Path inside the tar archive (e.g. "assets/textures/crate.png").</param>
         public V12PakManifestBuilder AddAsset(string assetKey, string archivePath)
@@ -120,9 +103,7 @@ namespace V12.Pak
             return this;
         }
 
-        /// <summary>
-        /// Remove an asset by key.
-        /// </summary>
+        /// <summary>Remove an asset by key.</summary>
         public V12PakManifestBuilder RemoveAsset(string assetKey)
         {
             _assets.Remove(assetKey);
@@ -130,13 +111,10 @@ namespace V12.Pak
         }
 
         /// <summary>
-        /// Bulk-add all files from a disk directory as assets.
-        /// Each file gets an assetKey based on its relative path within the directory,
-        /// and an archivePath under the given archive root.
+        /// Bulk-add all files from a disk directory as assets. Each file gets an
+        /// asset key based on its relative path within the directory, and an
+        /// archive path under the given archive root.
         /// </summary>
-        /// <param name="assetType">Asset category (e.g. "textures", "meshes", "audio"). Used as prefix in archive paths.</param>
-        /// <param name="diskDir">Physical directory to scan.</param>
-        /// <param name="archiveRoot">Root path inside the archive (default: "assets/{assetType}").</param>
         public V12PakManifestBuilder AddAssetsFromDirectory(string assetType, string diskDir, string? archiveRoot = null)
         {
             archiveRoot ??= $"assets/{assetType}";
@@ -148,9 +126,7 @@ namespace V12.Pak
                     .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                     .Replace('\\', '/');
 
-                string assetKey = $"{assetType}/{relativePath}";
-                string archivePath = $"{archiveRoot}/{relativePath}";
-                _assets[assetKey] = NormalizePath(archivePath);
+                _assets[$"{assetType}/{relativePath}"] = NormalizePath($"{archiveRoot}/{relativePath}");
             }
 
             return this;
@@ -161,10 +137,7 @@ namespace V12.Pak
 
         // ── Pak DLLs ──
 
-        /// <summary>
-        /// Add a DLL gamepack reference by its archive path.
-        /// </summary>
-        /// <param name="archivePath">Path inside the tar archive (e.g. "paks/MyGameplay.dll").</param>
+        /// <summary>Add a DLL gamepack reference by its archive path.</summary>
         public V12PakManifestBuilder AddPak(string archivePath)
         {
             _paks.Add(NormalizePath(archivePath));
@@ -181,62 +154,81 @@ namespace V12.Pak
         /// <summary>Get the pak list (for inspection/modification before Build).</summary>
         public List<string> Paks => _paks;
 
+        // ── Scripts ──
+
+        /// <summary>Add a Contract (<c>.ct</c>) / precompiled ObjektRT gamepack entrypoint.</summary>
+        public V12PakManifestBuilder AddScript(string archivePath)
+        {
+            _scripts.Add(NormalizePath(archivePath));
+            return this;
+        }
+
+        /// <summary>Add a C# component source (<c>.cs</c>) compiled when the pak loads.</summary>
+        public V12PakManifestBuilder AddCSharpScript(string archivePath)
+        {
+            _csharpScripts.Add(NormalizePath(archivePath));
+            return this;
+        }
+
+        /// <summary>Add a dependency <c>.v12pak</c>.</summary>
+        public V12PakManifestBuilder AddDependency(string dependency)
+        {
+            _dependencies.Add(NormalizePath(dependency));
+            return this;
+        }
+
         // ── Build ──
 
-        /// <summary>
-        /// Build and return the final <see cref="V12PakManifest"/>.
-        /// The builder can be reused after this call.
-        /// </summary>
+        /// <summary>Build and return the final <see cref="V12PakManifest"/>. The builder can be reused.</summary>
         public V12PakManifest Build()
         {
-            var manifest = new V12PakManifest
+            return new V12PakManifest
             {
                 Version = _version,
                 Engine = _engine,
-                Description = _description,
-                Author = _author,
-                Worlds = new List<WorldEntry>(_worlds),
+                Worlds = new List<V12PakWorldEntry>(_worlds),
                 Assets = new Dictionary<string, string>(_assets, StringComparer.OrdinalIgnoreCase),
-                Paks = new List<string>(_paks)
+                Paks = new List<string>(_paks),
+                Scripts = new List<string>(_scripts),
+                CSharpScripts = new List<string>(_csharpScripts),
+                Dependencies = new List<string>(_dependencies),
             };
-            return manifest;
         }
 
         /// <summary>
-        /// Build the manifest and immediately write it to a tar.gz pak
-        /// with the given file entries. This is a shortcut for Build + V12PakWriter.Finalize.
+        /// Build the manifest and immediately write it to a tar.gz pak with the
+        /// given file entries.
         /// </summary>
-        /// <param name="outputPath">Output .v12pak file path.</param>
-        /// <param name="entries">
-        /// Archive path → file data pairs to include in the pak.
-        /// The manifest.json is written automatically.
-        /// </param>
         public void BuildAndWrite(string outputPath, IEnumerable<(string ArchivePath, byte[] Data)> entries)
         {
-            var manifest = Build();
             using var writer = new V12PakWriter(outputPath);
+            writer.WriteManifest(Build());
             foreach (var (archivePath, data) in entries)
                 writer.AddFile(archivePath, data);
-            writer.Finalize(manifest);
         }
 
         /// <summary>
-        /// Build the manifest and write it to a pak, adding all files from a source directory.
+        /// Build the manifest and write it to a pak, adding all files from a
+        /// source directory.
         /// </summary>
-        /// <param name="outputPath">Output .v12pak file path.</param>
-        /// <param name="sourceDir">Directory whose files are packed into the archive.</param>
-        /// <param name="archiveRoot">Optional root prefix for all files (default: empty = files go to archive root).</param>
         public void BuildAndWriteFromDirectory(string outputPath, string sourceDir, string? archiveRoot = null)
         {
-            var manifest = Build();
             using var writer = new V12PakWriter(outputPath);
+            writer.WriteManifest(Build());
 
-            if (archiveRoot != null)
-                writer.AddDirectory(archiveRoot, sourceDir);
-            else
-                writer.AddDirectory("", sourceDir);
+            string normalizedRoot = Path.GetFullPath(sourceDir);
+            foreach (string filePath in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                string relativePath = filePath.Substring(normalizedRoot.Length)
+                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    .Replace('\\', '/');
 
-            writer.Finalize(manifest);
+                string archivePath = string.IsNullOrEmpty(archiveRoot)
+                    ? relativePath
+                    : NormalizePath(archiveRoot + "/" + relativePath);
+
+                writer.AddFile(archivePath, filePath);
+            }
         }
 
         private static string NormalizePath(string path)

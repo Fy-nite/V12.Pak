@@ -1,9 +1,30 @@
 <Project>
 
   <!--
-    Use absolute paths so V12.Pak resolves V12 and V12.Bindings regardless of build location.
-    This avoids Directory.Build.targets path resolution issues when building the submodule standalone.
+    V12.Pak is a submodule and does not vendor the engine. Point it at a
+    V12.Basic checkout so it compiles against the same V12 + V12.Bindings the
+    host uses. Resolution order:
+
+      1. A V12.Basic checkout containing this submodule
+         (<V12.Basic>/libs/V12.Pak -> ..\..)
+      2. The EcoVR-Engine checkout next to this repo (dev layout)
+      3. A sibling V12.Basic checkout (standalone V12.Pak layout)
+      4. The V12Studio checkout (legacy local layout)
+
+    Override with -p:V12BasicRoot=<path> or by setting it in the environment /
+    a parent Directory.Build.props. V12EngineProject / V12BindingsProject can
+    also be overridden individually.
   -->
+
+  <PropertyGroup>
+    <V12BasicRoot Condition="'$(V12BasicRoot)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\V12.Basic.csproj')">$(MSBuildThisFileDirectory)..\..</V12BasicRoot>
+    <V12BasicRoot Condition="'$(V12BasicRoot)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\EcoVR-Engine\libs\V12.basic\V12.Basic.csproj')">$(MSBuildThisFileDirectory)..\..\..\EcoVR-Engine\libs\V12.basic</V12BasicRoot>
+    <V12BasicRoot Condition="'$(V12BasicRoot)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\V12.Basic\V12.Basic.csproj')">$(MSBuildThisFileDirectory)..\..\..\V12.Basic</V12BasicRoot>
+    <V12BasicRoot Condition="'$(V12BasicRoot)' == '' and Exists('D:\git\V12Studio\libs\nova\libs\V12.Basic\V12.Basic.csproj')">D:\git\V12Studio\libs\nova\libs\V12.Basic</V12BasicRoot>
+
+    <V12EngineProject Condition="'$(V12EngineProject)' == ''">$(V12BasicRoot)\libs\V12\V12.csproj</V12EngineProject>
+    <V12BindingsProject Condition="'$(V12BindingsProject)' == ''">$(V12BasicRoot)\libs\V12.Bindings\V12.Bindings.csproj</V12BindingsProject>
+  </PropertyGroup>
 
   <PropertyGroup>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
@@ -11,13 +32,18 @@
 
   <ItemGroup>
     <ProjectReference Remove="..\V12-engine\V12.csproj" />
-    <ProjectReference Include="D:\git\V12Studio\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
-    <ProjectReference Include="D:\git\V12Studio\libs\nova\libs\V12.Basic\libs\V12.Bindings\V12.Bindings.csproj" />
+    <ProjectReference Include="$(V12EngineProject)" />
+    <ProjectReference Include="$(V12BindingsProject)" />
   </ItemGroup>
 
-  <!-- Don't compile the nested engine source files — they're pulled from Nova instead -->
+  <!-- Don't compile the nested engine source files; they come from the checkout above. -->
   <ItemGroup>
     <Compile Remove="libs/V12-engine/**" />
   </ItemGroup>
+
+  <Target Name="ValidateV12BasicRoot" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(V12BasicRoot)' == ''"
+           Text="V12BasicRoot is not set. Point it at a V12.Basic checkout, e.g. dotnet build -p:V12BasicRoot=D:\git\EcoVR-Engine\libs\V12.basic" />
+  </Target>
 
 </Project>

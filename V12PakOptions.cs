@@ -1,13 +1,10 @@
-using System;
-using System.Collections.Generic;
-
 namespace V12.Pak
 {
     /// <summary>
-    /// Controls what gets loaded from a .v12pak archive.
-    /// Use this to restrict untrusted paks (user-generated content, community mods).
+    /// Security/loading options controlling what gets imported from a <c>.v12pak</c>.
+    /// Defaults to the "user-generated content" trust level: no DLLs, everything else allowed.
     /// </summary>
-    public class V12PakOptions
+    public sealed class V12PakOptions
     {
         /// <summary>
         /// Whether to load DLL gamepaks from the pak. Default: false.
@@ -16,23 +13,42 @@ namespace V12.Pak
         public bool LoadDlls { get; set; } = false;
 
         /// <summary>
-        /// Whether to compile and run Contract (<c>.ct</c>) / load precompiled
-        /// ObjektRT (<c>.orbt</c>) script gamepaks declared in the manifest.
-        /// Default: false. Compiling/running scripts executes arbitrary code, so
-        /// it sits in the same trust tier as <see cref="LoadDlls"/>.
+        /// Whether to compile and run Contract (<c>.ct</c>) gamepack scripts from
+        /// the pak. Default: false. Contract compilation executes arbitrary code,
+        /// so it sits in the same trust tier as <see cref="LoadDlls"/>.
         /// </summary>
         public bool LoadContractScripts { get; set; } = false;
+
+        /// <summary>
+        /// Whether to compile and load C# component sources (<c>.cs</c>) from the
+        /// pak. Default: false. Like <see cref="LoadContractScripts"/> this runs
+        /// arbitrary code, so it sits in the same trust tier as
+        /// <see cref="LoadDlls"/>.
+        /// </summary>
+        public bool LoadCSharpScripts { get; set; } = false;
+
+        /// <summary>
+        /// Whether to load the paks listed in the manifest's
+        /// <see cref="V12PakManifest.Dependencies"/> before this pak. Default: true.
+        /// </summary>
+        public bool LoadDependencies { get; set; } = true;
+
+        /// <summary>
+        /// Extra directories (or explicit file paths) searched for dependency
+        /// paks, after the depending pak's own directory and before the working
+        /// directory.
+        /// </summary>
+        public List<string> DependencySearchPaths { get; set; } = new();
 
         /// <summary>
         /// File extensions allowed to be imported as assets.
         /// Null = allow all extensions. Empty set = block all assets.
         /// Checked against the archive path of each asset in the manifest.
-        /// Comparison is case-insensitive.
         /// </summary>
         public HashSet<string>? AllowedAssetExtensions { get; set; } = null;
 
         /// <summary>
-        /// Specific asset keys to block (exact match against manifest asset keys).
+        /// Specific asset paths to block (exact match, case-insensitive, against manifest asset keys).
         /// Checked after the extension whitelist.
         /// </summary>
         public HashSet<string>? BlockedAssetKeys { get; set; } = null;
@@ -42,54 +58,5 @@ namespace V12.Pak
         /// Set to false to only import assets without loading any worlds.
         /// </summary>
         public bool AllowWorldLoading { get; set; } = true;
-
-        /// <summary>
-        /// Full trust: load everything including DLLs, no extension filtering.
-        /// </summary>
-        public static V12PakOptions FullTrust => new() { LoadDlls = true };
-
-        /// <summary>
-        /// Restricted: no DLLs, common game asset types only.
-        /// </summary>
-        public static V12PakOptions Restricted => new()
-        {
-            LoadDlls = false,
-            AllowedAssetExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ".xml", ".glb", ".gltf", ".obj", ".fbx",
-                ".png", ".jpg", ".jpeg", ".bmp", ".tga",
-                ".lua", ".json"
-            }
-        };
-
-        /// <summary>
-        /// Worlds only: load world XML and templates, no other assets or DLLs.
-        /// </summary>
-        public static V12PakOptions WorldsOnly => new()
-        {
-            LoadDlls = false,
-            AllowedAssetExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ".xml"
-            }
-        };
-
-        /// <summary>
-        /// Check if an asset with the given archive path and key is allowed by these options.
-        /// </summary>
-        public bool IsAssetAllowed(string archivePath, string assetKey)
-        {
-            if (AllowedAssetExtensions != null)
-            {
-                string ext = System.IO.Path.GetExtension(archivePath);
-                if (string.IsNullOrEmpty(ext) || !AllowedAssetExtensions.Contains(ext))
-                    return false;
-            }
-
-            if (BlockedAssetKeys != null && BlockedAssetKeys.Contains(assetKey))
-                return false;
-
-            return true;
-        }
     }
 }

@@ -1,179 +1,154 @@
-using System;
-using System.Collections.Generic;
 using System.Formats.Tar;
-using System.IO;
 using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 
 namespace V12.Pak
 {
     /// <summary>
-    /// Opens a .v12pak tar.gz archive, reads the manifest, and provides random access
-    /// to entries by extracting to a temp directory on construction.
+    /// Opens a <c>.v12pak</c> tar.gz archive, reads its manifest, and provides
+    /// access to its entries.
+    ///
+    /// Gzip-compressed tar is not seekable, so tar entry data streams cannot be
+    /// re-read after the reader advances. The reader therefore materializes the
+    /// archive to a temp directory on open and indexes entry name → extracted
+    /// path. This mirrors the extraction behaviour of the legacy
+    /// <see cref="Core.WorldLoader.LoadFromArchive"/>, and gives the engine's
+    /// path-based APIs (script components, texture loaders) real files to read.
+    /// Call <see cref="Dispose"/> to remove the temp directory.
     /// </summary>
-    public class V12PakReader : IDisposable
+    public sealed class V12PakReader : IDisposable
     {
+        private static readonly JsonSerializerOptions JsonOpts = new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
+        private readonly string _pakPath;
         private readonly string _tempDir;
         private readonly Dictionary<string, string> _entryPaths = new(StringComparer.OrdinalIgnoreCase);
-        private bool _disposed;
 
-        /// <summary>The parsed manifest from the pak's manifest.json.</summary>
+        /// <summary>The parsed manifest, or an empty manifest when the archive lacks one.</summary>
         public V12PakManifest Manifest { get; }
 
-        /// <summary>The original pak file path.</summary>
-        public string PakPath { get; }
+        /// <summary>Path of the opened .v12pak file.</summary>
+        public string PakPath => _pakPath;
 
-        /// <summary>Temp directory where entries are extracted. Cleaned up on Dispose.</summary>
+        /// <summary>Directory the archive was extracted into. Removed on <see cref="Dispose"/>.</summary>
         public string TempDirectory => _tempDir;
 
-        /// <summary>
-        /// Opens a .v12pak tar.gz archive, extracts all entries to a temp directory,
-        /// and reads the manifest.
-        /// </summary>
+        /// <summary>All entry names in the archive (forward-slash paths).</summary>
+        public IReadOnlyCollection<string> EntryNames => _entryPaths.Keys;
+
         public V12PakReader(string pakPath)
         {
             if (!File.Exists(pakPath))
-                throw new FileNotFoundException($"Pak file not found: {pakPath}");
+                throw new FileNotFoundException($"v12pak not found: {pakPath}", pakPath);
 
-            PakPath = pakPath;
-            _tempDir = Path.Combine(
-                Path.GetTempPath(), "V12Pak",
-                Path.GetFileNameWithoutExtension(pakPath) + "_" + Guid.NewGuid().ToString("N"));
+            _pakPath = pakPath;
+            string pakName = Path.GetFileNameWithoutExtension(pakPath);
+            _tempDir = Path.Combine(Path.GetTempPath(), "V12Paks", pakName + "_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_tempDir);
 
-            ExtractToTempDir(pakPath, _tempDir);
-            BuildIndex(_tempDir);
+            string? manifestJson = null;
+            try
+            {
+                using var fileStream = File.OpenRead(pakPath);
+                using var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress);
+                using var tarReader = new TarReader(gzipStream);
 
-            string manifestPath = Path.Combine(_tempDir, "manifest.json");
-            if (!File.Exists(manifestPath))
-                throw new InvalidOperationException($"Pak file does not contain manifest.json: {pakPath}");
+                TarEntry? entry;
+                while ((entry = tarReader.GetNextEntry()) != null)
+                {
+                    if (entry.EntryType is TarEntryType.Directory or TarEntryType.GlobalExtendedAttributes) continue;
+                    if (string.IsNullOrEmpty(entry.Name)) continue;
 
-            byte[] manifestJson = File.ReadAllBytes(manifestPath);
-            Manifest = V12PakManifest.FromJson(manifestJson);
+                    string? safeName = SanitizeEntryName(entry.Name);
+                    if (safeName == null)
+                    {
+                        Console.WriteLine($"[V12Pak] Skipping unsafe entry name '{entry.Name}' in '{pakPath}'");
+                        continue;
+                    }
+
+                    string dest = Path.Combine(_tempDir, safeName);
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                    using (var source = entry.DataStream)
+                    using (var target = File.Create(dest))
+                        source.CopyTo(target);
+
+                    _entryPaths[entry.Name] = dest;
+                    if (string.Equals(entry.Name, "manifest.json", StringComparison.OrdinalIgnoreCase))
+                        manifestJson = File.ReadAllText(dest);
+                }
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidDataException($"'{pakPath}' is not a valid gzip-compressed tar (v12pak) file: {ex.Message}", ex);
+            }
+
+            if (manifestJson == null)
+                throw new InvalidDataException($"No manifest.json found in v12pak: {pakPath}");
+
+            Manifest = JsonSerializer.Deserialize<V12PakManifest>(manifestJson, JsonOpts) ?? new V12PakManifest();
         }
 
+        public bool HasEntry(string entryPath) => _entryPaths.ContainsKey(entryPath);
+
         /// <summary>
-        /// Opens a stream to the entry at the given archive path (e.g. "assets/textures/crate.png").
-        /// Returns null if the entry does not exist.
+        /// Open an entry for reading. The returned stream must be disposed by the caller.
+        /// Returns null when the entry does not exist.
         /// </summary>
-        public Stream? OpenEntry(string archivePath)
+        public Stream? OpenEntry(string entryPath)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(V12PakReader));
-
-            if (_entryPaths.TryGetValue(archivePath, out string? fullPath) && File.Exists(fullPath))
-                return File.OpenRead(fullPath);
-
+            if (_entryPaths.TryGetValue(entryPath, out var path))
+                return File.OpenRead(path);
             return null;
         }
 
-        /// <summary>
-        /// Returns true if an entry with the given archive path exists in the pak.
-        /// </summary>
-        public bool HasEntry(string archivePath)
+        /// <summary>Physical path of the extracted entry, or null when the entry does not exist.</summary>
+        public string? ResolveEntryPath(string entryPath)
+            => _entryPaths.TryGetValue(entryPath, out var path) ? path : null;
+
+        /// <summary>Read an entry's full text (UTF-8). Returns null when the entry does not exist.</summary>
+        public string? ReadEntryText(string entryPath)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(V12PakReader));
-            return _entryPaths.ContainsKey(archivePath);
+            var path = ResolveEntryPath(entryPath);
+            return path == null ? null : File.ReadAllText(path);
         }
 
-        /// <summary>
-        /// Returns the full disk path of an extracted entry, or null if not found.
-        /// Useful for passing to APIs that need a file path (e.g. Assimp mesh loading).
-        /// </summary>
-        public string? GetEntryPath(string archivePath)
-        {
-            if (_disposed) throw new ObjectDisposedException(nameof(V12PakReader));
-
-            if (_entryPaths.TryGetValue(archivePath, out string? fullPath) && File.Exists(fullPath))
-                return fullPath;
-
-            return null;
-        }
-
-        /// <summary>
-        /// Returns all entry archive paths in the pak.
-        /// </summary>
-        public IEnumerable<string> GetAllEntries()
-        {
-            if (_disposed) throw new ObjectDisposedException(nameof(V12PakReader));
-            return _entryPaths.Keys;
-        }
-
-        private static void ExtractToTempDir(string pakPath, string tempDir)
-        {
-            using var fileStream = File.OpenRead(pakPath);
-            using var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress);
-            using var tarReader = new TarReader(gzipStream);
-
-            TarEntry? entry;
-            while ((entry = tarReader.GetNextEntry(copyData: false)) != null)
-            {
-                if (entry.Name == null) continue;
-
-                // Normalize the entry name
-                string entryName = entry.Name.Replace('\\', '/').TrimStart('/');
-                if (string.IsNullOrEmpty(entryName)) continue;
-
-                string destPath = Path.Combine(tempDir, entryName);
-
-                // Security: prevent path traversal
-                string normalizedDest = Path.GetFullPath(destPath);
-                string normalizedBase = Path.GetFullPath(tempDir);
-                if (!normalizedDest.StartsWith(normalizedBase, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (entry.EntryType == TarEntryType.Directory)
-                {
-                    Directory.CreateDirectory(destPath);
-                    continue;
-                }
-
-                // Ensure parent directory exists
-                string? parentDir = Path.GetDirectoryName(destPath);
-                if (parentDir != null)
-                    Directory.CreateDirectory(parentDir);
-
-                // Extract file
-                if (entry.DataStream != null)
-                {
-                    using var fileOut = File.Create(destPath);
-                    entry.DataStream.CopyTo(fileOut);
-                }
-            }
-        }
-
-        private void BuildIndex(string tempDir)
-        {
-            string normalizedBase = Path.GetFullPath(tempDir);
-
-            foreach (string filePath in Directory.EnumerateFiles(tempDir, "*", SearchOption.AllDirectories))
-            {
-                string normalizedPath = Path.GetFullPath(filePath);
-                if (!normalizedPath.StartsWith(normalizedBase, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                // Get the relative path from the temp dir, using forward slashes
-                string relativePath = filePath.Substring(normalizedBase.Length)
-                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                    .Replace('\\', '/');
-
-                _entryPaths[relativePath] = filePath;
-            }
-        }
-
+        /// <summary>Remove the extracted temp directory. Best effort.</summary>
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
-
             try
             {
                 if (Directory.Exists(_tempDir))
-                    Directory.Delete(_tempDir, recursive: true);
+                    Directory.Delete(_tempDir, true);
             }
             catch
             {
-                // Best effort cleanup
+                // best effort
             }
+        }
+
+        /// <summary>
+        /// Normalize an entry name into a safe relative path. Rejects path
+        /// traversal ("..") and rooted paths. Returns null for unsafe names.
+        /// </summary>
+        private static string? SanitizeEntryName(string name)
+        {
+            string normalized = name.Replace('\\', '/').TrimStart('/');
+            if (normalized.Length == 0) return null;
+
+            var clean = new List<string>();
+            foreach (var segment in normalized.Split('/', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (segment == ".") continue;
+                if (segment == "..") return null;
+                if (segment.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) return null;
+                clean.Add(segment);
+            }
+            if (clean.Count == 0) return null;
+            return string.Join(Path.DirectorySeparatorChar, clean);
         }
     }
 }

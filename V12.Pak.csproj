@@ -3,8 +3,10 @@
   <PropertyGroup>
     <OutputType>library</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
  
+    <AssemblyName>V12.Pak</AssemblyName>
     <RootNamespace>V12.Pak</RootNamespace>
     <PackageId>Finite.V12.Pak</PackageId>
     <Version>1.0.0</Version>

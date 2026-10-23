@@ -1,95 +1,71 @@
-using System;
-using System.Collections.Generic;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-
 namespace V12.Pak
 {
     /// <summary>
-    /// Data model for the manifest.json inside a .v12pak archive.
-    /// Describes worlds, assets, and DLL gamepaks contained in the pak.
+    /// Data model for <c>manifest.json</c> inside a <c>.v12pak</c> archive.
     /// </summary>
-    public class V12PakManifest
+    public sealed class V12PakManifest
     {
         /// <summary>Manifest format version. Currently 1.</summary>
-        [JsonPropertyName("version")]
         public int Version { get; set; } = 1;
 
         /// <summary>Engine identifier. Always "v12".</summary>
-        [JsonPropertyName("engine")]
         public string Engine { get; set; } = "v12";
 
         /// <summary>Worlds contained in this pak. A pak can hold multiple worlds.</summary>
-        [JsonPropertyName("worlds")]
-        public List<WorldEntry> Worlds { get; set; } = new();
+        public List<V12PakWorldEntry> Worlds { get; set; } = new();
 
         /// <summary>
-        /// Virtual path to archive path mapping.
-        /// Keys are v12:// resolvable paths (e.g. "textures/crate.png").
-        /// Values are tar entry paths (e.g. "assets/textures/crate.png").
+        /// Virtual path to archive path mapping. Keys are <c>v12://</c> resolvable
+        /// paths (e.g. <c>textures/crate.png</c>), values are tar entry paths
+        /// (e.g. <c>assets/textures/crate.png</c>).
         /// </summary>
-        [JsonPropertyName("assets")]
         public Dictionary<string, string> Assets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>Archive paths to C# DLL gamepaks. Loaded via GamepackLoader.</summary>
-        [JsonPropertyName("paks")]
+        /// <summary>Archive paths to C# DLL gamepaks, loaded via <see cref="GamePak.GamepackLoader"/>.</summary>
         public List<string> Paks { get; set; } = new();
 
         /// <summary>
-        /// Archive paths to script gamepaks: Contract sources (<c>.ct</c>) and
-        /// precompiled ObjektRT modules (<c>.orbt</c>/<c>.oil</c>/<c>.oir</c>).
-        /// Loaded via <c>ContractGamepack</c>/<c>ObjektRTGamepak</c> when
-        /// <see cref="V12PakOptions.LoadContractScripts"/> is set.
+        /// Archive paths to script gamepack entrypoints. <c>.ct</c> Contract
+        /// sources are compiled at load time; <c>.orbt</c>/<c>.oil</c>
+        /// precompiled ObjektRT modules are loaded as-is. Each entrypoint must
+        /// define a <c>Main</c> function; an optional
+        /// <c>OnUpdate(float deltaTime)</c> hook is invoked per frame.
         /// </summary>
-        [JsonPropertyName("scripts")]
         public List<string> Scripts { get; set; } = new();
 
-        /// <summary>Optional description of this pak.</summary>
-        [JsonPropertyName("description")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? Description { get; set; }
+        /// <summary>
+        /// Archive paths to C# component sources (<c>.cs</c>) compiled at load
+        /// time. Every <c>IComponent</c> type they declare is registered so this
+        /// pak's worlds and Contract scripts, and other paks, can attach it.
+        /// When empty, every <c>.cs</c> under the archive's <c>scripts/</c>
+        /// folder is compiled instead.
+        /// </summary>
+        public List<string> CSharpScripts { get; set; } = new();
 
-        /// <summary>Optional author.</summary>
-        [JsonPropertyName("author")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? Author { get; set; }
-
-        public static readonly JsonSerializerOptions JsonOptions = new()
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            // Paks written by older SDK builds emitted PascalCase keys
-            // ("Worlds"/"Scripts"). Accept both so old archives still load.
-            PropertyNameCaseInsensitive = true,
-        };
-
-        public byte[] ToJson() => JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions);
-
-        public static V12PakManifest FromJson(byte[] json) =>
-            JsonSerializer.Deserialize<V12PakManifest>(json, JsonOptions)
-            ?? throw new InvalidOperationException("Failed to deserialize pak manifest");
-
-        public static V12PakManifest FromJson(string json) =>
-            JsonSerializer.Deserialize<V12PakManifest>(json, JsonOptions)
-            ?? throw new InvalidOperationException("Failed to deserialize pak manifest");
+        /// <summary>
+        /// Other <c>.v12pak</c> archives this pak depends on. Values are file
+        /// names, relative paths or absolute paths; they are resolved against
+        /// the pak's own directory first, then
+        /// <see cref="V12PakOptions.DependencySearchPaths"/>, then the working
+        /// directory.
+        /// <para>
+        /// Dependencies are loaded before this pak, so their DLLs and compiled
+        /// C# component types are available to this pak's worlds, C# sources and
+        /// Contract scripts.
+        /// </para>
+        /// </summary>
+        public List<string> Dependencies { get; set; } = new();
     }
 
-    /// <summary>
-    /// Describes a single world inside a pak archive.
-    /// </summary>
-    public class WorldEntry
+    public sealed class V12PakWorldEntry
     {
-        /// <summary>Human-readable world name. Used as the v12:// mount point.</summary>
-        [JsonPropertyName("name")]
-        public string Name { get; set; } = string.Empty;
+        /// <summary>Human-readable world name. Used as the <c>v12://</c> mount point.</summary>
+        public string Name { get; set; } = "";
 
-        /// <summary>Path inside the tar archive to world.xml.</summary>
-        [JsonPropertyName("entry")]
-        public string Entry { get; set; } = string.Empty;
+        /// <summary>Path inside the tar archive to the world's world.xml.</summary>
+        public string Entry { get; set; } = "";
 
-        /// <summary>Path inside the tar archive to the templates directory.</summary>
-        [JsonPropertyName("templatesDir")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? TemplatesDir { get; set; }
+        /// <summary>Path inside the tar archive to the world's templates directory.</summary>
+        public string TemplatesDir { get; set; } = "";
     }
 }

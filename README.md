@@ -1,30 +1,24 @@
 # V12.Pak
 
-A `.v12pak` packaging and loading library for V12 games. A pak is a single **tar.gz**
-archive (built with `System.Formats.Tar`, no external packages) that bundles worlds,
-assets, and optional C# DLL gamepaks into one distributable file.
+A `.v12pak` packaging and loading library for V12 games. A pak is a single
+**tar.gz** archive (built with `System.Formats.Tar`, no external packages) that
+bundles worlds, assets, and optional gamepaks — C# DLLs or **Contract (`.ct`)
+scripts** — into one distributable file.
 
-The V12 engine has no dependency on this library — reference `V12.Pak` from your
-application (or the sample host) when you want pak support.
-
-```csharp
-using V12.Pak;
-
-var loader = root.LoadPak("game.v12pak", V12PakOptions.FullTrust);
-// ... keep `loader` alive while the pak's worlds/assets are in use ...
-loader.Dispose(); // unloads (removes the extracted temp dir); loaded worlds remain
-```
+V12-engine itself has no dependency on this library; reference `V12.Pak` from
+your application when you want pak support.
 
 ## Archive layout
 
 ```
 game.v12pak
-├── manifest.json              # index: worlds, asset map, DLL list
+├── manifest.json              # index: worlds, asset map, DLL list, scripts
 ├── worlds/{WorldName}/
 │   ├── world.xml              # WorldML scene definition
-│   └── templates/*.xml        # XML element templates (optional)
-├── assets/**                  # meshes, textures, audio, fonts, scripts, ...
-└── paks/*.dll                 # C# DLL gamepaks (optional)
+│   └── templates/*.xml        # XML element templates
+├── assets/**                  # textures, meshes, scripts, ...
+├── paks/*.dll                 # C# DLL gamepaks (optional)
+└── scripts/*.ct               # Contract gamepak entrypoints (optional)
 ```
 
 `manifest.json`:
@@ -33,138 +27,129 @@ game.v12pak
 {
   "version": 1,
   "engine": "v12",
-  "description": "My game pak",
-  "author": "Me",
   "worlds": [
-    { "name": "MyWorld", "entry": "worlds/MyWorld/world.xml", "templatesDir": "worlds/MyWorld/templates" }
+    { "name": "MyWorld", "entry": "worlds/MyWorld/world.xml", "templatesDir": "worlds/MyWorld/templates/" }
   ],
   "assets": {
-    "textures/crate.png": "assets/textures/crate.png"
+    "textures/crate.png": "assets/textures/crate.png",
+    "scripts/player.lua": "assets/scripts/player.lua"
   },
-  "paks": ["paks/mygame.dll"]
+  "paks": ["paks/mygame.dll"],
+  "scripts": ["scripts/main.ct"]
 }
 ```
 
-Asset-map keys are `v12://`-resolvable virtual paths; values are paths inside the archive.
+Asset map keys are `v12://`-resolvable virtual paths; values are archive paths.
+
+## Contract gamepaks
+
+A `.ct` script in `scripts/` is compiled at load time into an
+`IV12Gamepack`. Each script defines a `Main` (runs on start) and optionally an
+`OnUpdate(deltaTime: float)` hook that runs every frame:
+
+```contract
+Contract MyGame {
+    static fn Main() {
+        var crate = V12.World.SpawnElementAt("crate", 0.0, 2.0, -3.0);
+        V12.Registry.RegisterString("mygame.title", "Hello");
+    }
+
+    static fn OnUpdate(deltaTime: float) {
+        V12.Registry.RegisterDouble("mygame.t", deltaTime);
+    }
+}
+```
+
+`Main` runs in `OnStart`; the `OnUpdate` hook is driven through an `IGameService`
+registered on `GameRoot.Registry` (`ContractTick:<script name>`), so it follows
+the same two-phase lifecycle and per-frame tick as DLL gamepaks. Scripts that
+fail to compile throw `ContractCompileException` from `OnStart`.
 
 ## Loading
 
-`root.LoadPak(...)` is the one-call entry point (an extension on `GameRoot`):
-
 ```csharp
-// Full trust: load worlds, assets, and DLL gamepaks
-var loader = root.LoadPak("official_content.v12pak",
-    new V12PakOptions { LoadDlls = true });
+using V12.Pak;
 
-// Restricted: no DLLs, allowed asset types only
-var loader = root.LoadPak("user_world.v12pak", new V12PakOptions
+// Full trust: load everything including DLLs and .ct scripts
+var result = root.LoadPak("official_content.v12pak",
+    new V12PakOptions { LoadDlls = true, LoadContractScripts = true });
+
+// Restricted: no DLLs, no scripts, only allowed asset types
+var result = root.LoadPak("user_world.v12pak", new V12PakOptions
 {
     LoadDlls = false,
+    LoadContractScripts = false,
     AllowedAssetExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        ".xml", ".glb", ".gltf", ".obj", ".png", ".jpg"
+        ".xml", ".glb", ".gltf", ".obj", ".png", ".jpg", ".lua"
     }
 });
 ```
 
-`LoadPak` opens the archive, mounts a `V12PakAssetResolver` on the active `AssetResolver`,
-loads each declared world (parsing `world.xml` + templates into `GameRoot.Worlds`), and —
-when enabled — loads bundled DLL gamepaks. Keep the returned `V12PakLoader` alive while the
-pak is in use; `Dispose()` removes the extracted temp directory.
+`LoadPak` reads the manifest, applies the security options, loads each declared
+world (world.xml + templates) into `GameRoot.Worlds`, registers the pak's
+`V12PakAssetResolver` as the active `AssetResolver`, and — when enabled — loads
+bundled DLL gamepaks via `GamepackLoader` and compiles declared `.ct` scripts
+into `ContractGamepack`s in the same loader.
 
-Loading is also available without a `GameRoot` via the `V12PakLoader` class directly:
-
-```csharp
-var loader = new V12PakLoader();
-loader.Load("game.v12pak", V12PakOptions.FullTrust, loadWorlds: true, loadDlls: true);
-foreach (var r in loader.Results) Console.WriteLine($"{r.Type}: {r.Message}");
-```
+Keep the returned `V12PakLoadResult` alive while the pak is in use. Its
+`Reader` materializes the archive to a temp directory (gzip tar is not
+seekable, and the engine's path-based APIs need real files); calling
+`result.Dispose()` removes that directory.
 
 ## Building
 
-From a directory mirroring the archive layout, `PackFromDirectory` scans for worlds
-(`**/world.xml`), asset folders (`meshes/`, `textures/`, `scripts/`, `audio/`, `fonts/`),
-and DLLs (`paks/*.dll`), and generates the manifest:
-
 ```csharp
-var writer = new V12PakWriter("game.v12pak");
-var manifest = writer.PackFromDirectory("./mygame_build");
-writer.Finalize(manifest);
-
-// or, on GameRoot:
+// From a directory mirroring the archive layout:
 root.BuildPak("./mygame_build", "game.v12pak");
 ```
 
-For full control, build the manifest explicitly:
+When the input directory has no `manifest.json`, one is generated by scanning
+for `worlds/*/world.xml`, files under `assets/`, DLLs under `paks/`, and `.ct`
+files under `scripts/`. `V12PakBuilder.Build(inputDirectory, outputPath)` is the
+non-GameRoot equivalent.
+
+### Supplying your own manifest
+
+Pass a manifest to skip auto-detection entirely. Every archive path it declares
+(worlds, assets, paks, scripts, C# scripts) is validated against the input
+directory before anything is written, so a typo fails the build:
 
 ```csharp
+// From a V12PakManifest instance:
 var manifest = V12PakManifestBuilder.Create()
-    .WithDescription("My game pak")
-    .WithAuthor("Me")
-    .AddWorld("Forest", "worlds/forest/world.xml", "worlds/forest/templates")
-    .AddAsset("textures/crate.png", "assets/textures/crate.png")
-    .AddAssetsFromDirectory("textures", "./textures")
-    .AddPak("paks/MyGameplay.dll")
+    .AddWorld("Scene", "Scenes/Main.worldml")
+    .AddCSharpScript("Scripts/SunRotate.cs")
+    .AddAsset("Textures/Grass.png", "Textures/Grass.png")
     .Build();
+V12PakBuilder.Build(gameDir, "game.v12pak", manifest);
 
-// Build + write in one step:
-V12PakManifestBuilder.Create()
-    .AddWorld("Forest", "worlds/forest/world.xml")
-    .BuildAndWriteFromDirectory("game.v12pak", "./mygame_build");
+// Or straight from a manifest.json on disk (absolute or relative to gameDir):
+V12PakBuilder.Build(gameDir, "game.v12pak", "build.manifest.json");
 ```
 
-## Low-level reader / writer
+`vcsdk build <gameDir> --manifest <file>` is the CLI wrapper for this path.
+
+## Low-level reader/writer
 
 ```csharp
 using var reader = new V12PakReader("game.v12pak");
 var manifest = reader.Manifest;
-if (reader.HasEntry("assets/textures/crate.png"))
-    using var png = reader.OpenEntry("assets/textures/crate.png");
-string? path = reader.GetEntryPath("assets/meshes/hero.glb"); // real temp path for path-based loaders
-foreach (var entry in reader.GetAllEntries()) Console.WriteLine(entry);
+using var mesh = reader.OpenEntry("assets/meshes/hero.glb");
 
 using var writer = new V12PakWriter("output.v12pak");
+writer.WriteManifest(manifest);
 writer.AddFile("assets/textures/crate.png", pngBytes);
-writer.AddFileFromDisk("assets/meshes/hero.glb", "./hero.glb");
-writer.Finalize(manifest);
 ```
 
-The reader materializes the archive to a temp directory on construction (gzip tar isn't
-seekable and the engine's path-based APIs need real files); `Dispose()` removes it.
+## Security defaults
 
-## Assets
+| Scenario                  | LoadDlls | LoadContractScripts | AllowedAssetExtensions                |
+|---------------------------|----------|---------------------|---------------------------------------|
+| First-party / DLC         | `true`   | `true`              | `null` (all)                          |
+| User-generated world      | `false`  | `false`             | `.xml .glb .gltf .obj .png .jpg .lua` |
+| Minimal / import-only     | `false`  | `false`             | `.xml`                                |
 
-`V12PakAssetResolver` implements `IAssetResolver`. Given a `v12://` URI it strips the mount
-point, looks the asset key up in the manifest, applies `V12PakOptions` filtering, and returns
-the extracted file path (or an open stream). An optional fallback resolver serves loose files
-on disk.
-
-## Options & security
-
-| Scenario | `LoadDlls` | `AllowedAssetExtensions` |
-|---|---|---|
-| `V12PakOptions.FullTrust` | `true` | (all) |
-| `V12PakOptions.Restricted` | `false` | `.xml .glb .gltf .obj .fbx .png .jpg .jpeg .bmp .tga .lua .json` |
-| `V12PakOptions.WorldsOnly` | `false` | `.xml` |
-
-`LoadDlls` is `false` by default because DLL gamepaks execute arbitrary code. Entry names are
-sanitized on extraction — path-traversal (`..`) and rooted names are rejected. Additional
-`BlockedAssetKeys` can be supplied to deny specific assets after the extension check.
-
-## API
-
-| Type | Purpose |
-|---|---|
-| `GameRootPakExtensions` | `root.LoadPak(...)`, `root.BuildPak(...)` |
-| `V12PakLoader` | Open + load a pak; `Results`, `Dispose()` |
-| `V12PakOptions` | `LoadDlls`, `AllowedAssetExtensions`, `BlockedAssetKeys`, `AllowWorldLoading`; `FullTrust`/`Restricted`/`WorldsOnly` presets |
-| `V12PakReader` | Read/extract a pak; `Manifest`, `OpenEntry`, `HasEntry`, `GetEntryPath`, `GetAllEntries` |
-| `V12PakWriter` | Write a pak; `AddFile`/`AddFileFromDisk`/`AddDirectory`/`PackFromDirectory`/`Finalize` |
-| `V12PakManifest` / `WorldEntry` | Manifest model (`ToJson`/`FromJson`) |
-| `V12PakManifestBuilder` | Fluent manifest construction |
-| `V12PakAssetResolver` | `IAssetResolver` serving `v12://` assets from a pak |
-
-## Building this repo
-
-`V12.Pak.csproj` targets `net10.0` and references the V12 engine project (expected as a
-sibling `..\V12-engine\V12.csproj`). Package id `Finite.V12.Pak`.
+Both `LoadDlls` and `LoadContractScripts` execute arbitrary code, so they
+default to `false`. Entry names are sanitized on extraction — path-traversal
+names (`..`) and rooted paths are rejected.

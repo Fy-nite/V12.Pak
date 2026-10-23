@@ -1,251 +1,88 @@
-using System;
-using System.Collections.Generic;
 using System.Formats.Tar;
-using System.IO;
 using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 
 namespace V12.Pak
 {
     /// <summary>
-    /// Builds a .v12pak tar.gz archive from a directory of game content.
-    /// Writes the manifest and all files into the archive.
+    /// Builds a <c>.v12pak</c> tar.gz archive from game content. Writes entries
+    /// sequentially; the manifest should be written first (see <see cref="WriteManifest"/>).
     /// </summary>
-    public class V12PakWriter : IDisposable
+    public sealed class V12PakWriter : IDisposable
     {
-        private readonly string _outputPath;
-        private readonly List<(string ArchivePath, byte[] Data)> _entries = new();
-        private bool _disposed;
-        private bool _finalized;
+        private static readonly JsonSerializerOptions JsonOpts = new()
+        {
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = true
+        };
+
+        private readonly FileStream _fileStream;
+        private readonly GZipStream _gzipStream;
+        private readonly TarWriter _tarWriter;
+        private readonly HashSet<string> _written = new(StringComparer.OrdinalIgnoreCase);
 
         public V12PakWriter(string outputPath)
         {
-            _outputPath = outputPath;
-
-            string? dir = Path.GetDirectoryName(outputPath);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
+            if (string.IsNullOrWhiteSpace(outputPath))
+                throw new ArgumentException("Output path is required.", nameof(outputPath));
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+            _fileStream = File.Create(outputPath);
+            _gzipStream = new GZipStream(_fileStream, CompressionLevel.Optimal);
+            _tarWriter = new TarWriter(_gzipStream);
         }
 
-        /// <summary>Add a file from a byte array.</summary>
+        /// <summary>Write a file entry from a byte array.</summary>
         public void AddFile(string archivePath, byte[] data)
         {
-            if (_finalized) throw new InvalidOperationException("Cannot add entries after finalization.");
-            _entries.Add((NormalizePath(archivePath), data));
+            using var ms = new MemoryStream(data, writable: false);
+            AddFile(archivePath, ms);
         }
 
-        /// <summary>Add a file from a stream. The stream is fully read into memory.</summary>
+        /// <summary>
+        /// Write a file entry from a stream. The stream is copied during this call.
+        /// Duplicate entry names throw.
+        /// </summary>
         public void AddFile(string archivePath, Stream data)
         {
-            if (_finalized) throw new InvalidOperationException("Cannot add entries after finalization.");
-            using var ms = new MemoryStream();
-            data.CopyTo(ms);
-            _entries.Add((NormalizePath(archivePath), ms.ToArray()));
+            if (string.IsNullOrWhiteSpace(archivePath))
+                throw new ArgumentException("Archive path is required.", nameof(archivePath));
+
+            string name = NormalizeName(archivePath);
+            if (!_written.Add(name))
+                throw new InvalidOperationException($"Duplicate v12pak entry: '{archivePath}'");
+
+            var entry = new PaxTarEntry(TarEntryType.RegularFile, name)
+            {
+                DataStream = data
+            };
+            _tarWriter.WriteEntry(entry);
         }
 
-        /// <summary>Add a file from disk.</summary>
-        public void AddFileFromDisk(string archivePath, string diskPath)
+        /// <summary>Write a file entry by copying a file from disk.</summary>
+        public void AddFile(string archivePath, string filePath)
         {
-            if (_finalized) throw new InvalidOperationException("Cannot add entries after finalization.");
-            byte[] data = File.ReadAllBytes(diskPath);
-            _entries.Add((NormalizePath(archivePath), data));
+            if (!File.Exists(filePath))
+                throw new FileNotFoundException($"Source file not found: {filePath}", filePath);
+            using var stream = File.OpenRead(filePath);
+            AddFile(archivePath, stream);
         }
 
-        /// <summary>
-        /// Recursively add all files from a directory.
-        /// Each file's archive path is relative to the directory root.
-        /// </summary>
-        public void AddDirectory(string archiveRoot, string diskDir)
-        {
-            if (_finalized) throw new InvalidOperationException("Cannot add entries after finalization.");
+        /// <summary>Write a UTF-8 text entry (e.g. world.xml).</summary>
+        public void AddText(string archivePath, string text)
+            => AddFile(archivePath, Encoding.UTF8.GetBytes(text));
 
-            string normalizedRoot = Path.GetFullPath(diskDir);
-
-            foreach (string filePath in Directory.EnumerateFiles(diskDir, "*", SearchOption.AllDirectories))
-            {
-                string relativePath = filePath.Substring(normalizedRoot.Length)
-                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                    .Replace('\\', '/');
-
-                string archivePath = NormalizePath(archiveRoot + "/" + relativePath);
-                byte[] data = File.ReadAllBytes(filePath);
-                _entries.Add((archivePath, data));
-            }
-        }
-
-        /// <summary>
-        /// Packs a game directory into the pak. Scans for worlds (directories containing world.xml),
-        /// asset files (meshes, textures, scripts), and DLLs. Generates the manifest automatically.
-        /// </summary>
-        public V12PakManifest PackFromDirectory(string gameDir)
-        {
-            if (_finalized) throw new InvalidOperationException("Cannot pack after finalization.");
-
-            string normalizedRoot = Path.GetFullPath(gameDir);
-            var manifest = new V12PakManifest { Version = 1, Engine = "v12" };
-
-            // Scan for worlds (directories containing world.xml)
-            foreach (string worldXml in Directory.EnumerateFiles(gameDir, "world.xml", SearchOption.AllDirectories))
-            {
-                string worldDir = Path.GetDirectoryName(worldXml)!;
-                string relativeDir = worldDir.Substring(normalizedRoot.Length)
-                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                    .Replace('\\', '/');
-
-                string worldName = string.IsNullOrEmpty(relativeDir)
-                    ? Path.GetFileNameWithoutExtension(_outputPath)
-                    : Path.GetFileName(relativeDir);
-
-                string entryPath = string.IsNullOrEmpty(relativeDir)
-                    ? "world.xml"
-                    : relativeDir + "/world.xml";
-
-                var worldEntry = new WorldEntry
-                {
-                    Name = worldName,
-                    Entry = NormalizePath(entryPath),
-                };
-
-                // Check for templates directory
-                string templatesDir = Path.Combine(worldDir, "templates");
-                if (Directory.Exists(templatesDir))
-                {
-                    worldEntry.TemplatesDir = NormalizePath(
-                        (string.IsNullOrEmpty(relativeDir) ? "" : relativeDir + "/") + "templates");
-                }
-
-                manifest.Worlds.Add(worldEntry);
-
-                // Add all files from the world directory. Archive root mirrors the
-                // source layout (relativeDir already includes "worlds/{World}"),
-                // so it matches worldEntry.Entry.
-                AddDirectory(string.IsNullOrEmpty(relativeDir) ? "worlds/" + worldName : relativeDir, worldDir);
-            }
-
-            // Scan for asset directories
-            string[] assetDirs = { "meshes", "textures", "audio", "fonts" };
-            foreach (string assetType in assetDirs)
-            {
-                string assetDir = Path.Combine(gameDir, assetType);
-                if (Directory.Exists(assetDir))
-                {
-                    string pakAssetDir = "assets/" + assetType;
-                    AddDirectory(pakAssetDir, assetDir);
-
-                    // Register each asset in the manifest
-                    foreach (string filePath in Directory.EnumerateFiles(assetDir, "*", SearchOption.AllDirectories))
-                    {
-                        string relativePath = filePath.Substring(assetDir.Length)
-                            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                            .Replace('\\', '/');
-
-                        string pakPath = pakAssetDir + "/" + relativePath;
-                        string assetKey = assetType + "/" + relativePath;
-                        manifest.Assets[assetKey] = NormalizePath(pakPath);
-                    }
-                }
-            }
-
-            // Pack a top-level Assets/ directory verbatim (source layout
-            // preserved), so content packs — e.g. a Minecraft-style texture
-            // pack under Assets/textures/** — ship inside the pak and stay
-            // addressable as "Assets/..." relative to the mounted pak root.
-            string assetsRootDir = Path.Combine(gameDir, "Assets");
-            if (Directory.Exists(assetsRootDir))
-            {
-                AddDirectory("Assets", assetsRootDir);
-
-                foreach (string filePath in Directory.EnumerateFiles(assetsRootDir, "*", SearchOption.AllDirectories))
-                {
-                    string relativePath = filePath.Substring(assetsRootDir.Length)
-                        .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                        .Replace('\\', '/');
-
-                    manifest.Assets["Assets/" + relativePath] = NormalizePath("Assets/" + relativePath);
-                }
-            }
-
-            // Scan for script gamepaks: Contract sources + precompiled ObjektRT modules
-            string scriptsDir = Path.Combine(gameDir, "scripts");
-            if (Directory.Exists(scriptsDir))
-            {
-                foreach (string pattern in new[] { "*.ct", "*.orbt", "*.oil", "*.oir" })
-                {
-                    foreach (string file in Directory.EnumerateFiles(scriptsDir, pattern, SearchOption.AllDirectories))
-                    {
-                        string relative = Path.GetRelativePath(normalizedRoot, file).Replace('\\', '/');
-                        manifest.Scripts.Add(relative);
-                        AddFileFromDisk(relative, file);
-                    }
-                }
-            }
-
-            // Scan for DLLs in a paks/ directory
-            string paksDir = Path.Combine(gameDir, "paks");
-            if (Directory.Exists(paksDir))
-            {
-                foreach (string dll in Directory.EnumerateFiles(paksDir, "*.dll", SearchOption.AllDirectories))
-                {
-                    string relativePath = dll.Substring(normalizedRoot.Length)
-                        .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                        .Replace('\\', '/');
-
-                    string pakPath = NormalizePath(relativePath);
-                    AddFileFromDisk(pakPath, dll);
-                    manifest.Paks.Add(pakPath);
-                }
-            }
-
-            return manifest;
-        }
-
-        /// <summary>
-        /// Write the tar.gz archive with all added entries.
-        /// If a manifest is provided, it is written as manifest.json first.
-        /// </summary>
-        public void Finalize(V12PakManifest? manifest = null)
-        {
-            if (_finalized) throw new InvalidOperationException("Already finalized.");
-            _finalized = true;
-
-            using var fileStream = File.Create(_outputPath);
-            using var gzipStream = new GZipStream(fileStream, CompressionLevel.Optimal);
-            using var tarWriter = new TarWriter(gzipStream);
-
-            // Write manifest first
-            if (manifest != null)
-            {
-                byte[] manifestJson = manifest.ToJson();
-                var manifestEntry = new PaxTarEntry(TarEntryType.RegularFile, "manifest.json");
-                manifestEntry.DataStream = new MemoryStream(manifestJson, writable: false);
-                tarWriter.WriteEntry(manifestEntry);
-            }
-
-            // Write all entries
-            foreach (var (archivePath, data) in _entries)
-            {
-                var entry = new PaxTarEntry(TarEntryType.RegularFile, archivePath);
-                entry.DataStream = new MemoryStream(data, writable: false);
-                tarWriter.WriteEntry(entry);
-            }
-        }
-
-        private static string NormalizePath(string path)
-        {
-            return path.Replace('\\', '/').TrimStart('/');
-        }
+        /// <summary>Serialize and write <c>manifest.json</c>. Call before the other entries.</summary>
+        public void WriteManifest(V12PakManifest manifest)
+            => AddText("manifest.json", JsonSerializer.Serialize(manifest, JsonOpts));
 
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
-
-            if (!_finalized)
-            {
-                // If not explicitly finalized, do a best-effort finalize without manifest
-                try { Finalize(null); }
-                catch { /* ignore */ }
-            }
+            _tarWriter?.Dispose();
+            _gzipStream?.Dispose();
+            _fileStream?.Dispose();
         }
+
+        private static string NormalizeName(string archivePath) => archivePath.Replace('\\', '/').TrimStart('/');
     }
 }
