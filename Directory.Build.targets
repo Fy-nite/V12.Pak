@@ -20,7 +20,6 @@
     <V12BasicRoot Condition="'$(V12BasicRoot)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\V12.Basic.csproj')">$(MSBuildThisFileDirectory)..\..</V12BasicRoot>
     <V12BasicRoot Condition="'$(V12BasicRoot)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\EcoVR-Engine\libs\V12.basic\V12.Basic.csproj')">$(MSBuildThisFileDirectory)..\..\..\EcoVR-Engine\libs\V12.basic</V12BasicRoot>
     <V12BasicRoot Condition="'$(V12BasicRoot)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\V12.Basic\V12.Basic.csproj')">$(MSBuildThisFileDirectory)..\..\..\V12.Basic</V12BasicRoot>
-    <V12BasicRoot Condition="'$(V12BasicRoot)' == '' and Exists('D:\git\V12Studio\libs\nova\libs\V12.Basic\V12.Basic.csproj')">D:\git\V12Studio\libs\nova\libs\V12.Basic</V12BasicRoot>
 
     <V12EngineProject Condition="'$(V12EngineProject)' == ''">$(V12BasicRoot)\libs\V12\V12.csproj</V12EngineProject>
     <V12BindingsProject Condition="'$(V12BindingsProject)' == ''">$(V12BasicRoot)\libs\V12.Bindings\V12.Bindings.csproj</V12BindingsProject>
