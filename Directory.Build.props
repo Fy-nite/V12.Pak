@@ -1,0 +1,16 @@
+<Project>
+
+  <!--
+    V12.Pak normally resolves V12.Basic/V12-engine from its own
+    Directory.Build.targets (standalone layouts). When nested inside
+    V12-Monorepo, import the root props first so its engine/bindings paths are
+    already set to the sibling checkouts and the targets fallbacks are skipped.
+  -->
+  <PropertyGroup>
+    <_V12SiblingRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..'))</_V12SiblingRoot>
+    <_V12MonorepoRoot Condition="Exists('$(_V12SiblingRoot)/V12-Engine/V12.csproj') and Exists('$(_V12SiblingRoot)/V12.Basic/V12.Basic.csproj')">$(_V12SiblingRoot)</_V12MonorepoRoot>
+    <_V12MonorepoProps Condition="'$(_V12MonorepoRoot)' != ''">$([System.IO.Path]::Combine('$(_V12MonorepoRoot)', 'Directory.Build.props'))</_V12MonorepoProps>
+  </PropertyGroup>
+  <Import Project="$(_V12MonorepoProps)" Condition="'$(_V12MonorepoProps)' != '' and Exists('$(_V12MonorepoProps)')" />
+
+</Project>
