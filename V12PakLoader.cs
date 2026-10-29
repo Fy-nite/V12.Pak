@@ -120,7 +120,7 @@ namespace V12.Pak
                     WarnSkippedDlls(pakPath, manifest);
 
                 if (options.LoadCSharpScripts)
-                    LoadCSharpScripts(reader, manifest, result);
+                    LoadCSharpScripts(reader, manifest, result, root);
                 else
                     WarnSkippedCSharp(pakPath, manifest);
 
@@ -392,6 +392,14 @@ namespace V12.Pak
                 string simpleName = Path.GetFileNameWithoutExtension(dll);
                 if (FindLoadedAssembly(simpleName) != null) continue;
 
+                // Native libraries can ship in bin/ too; Assembly.LoadFrom would
+                // throw BadImageFormat. Leave them to the platform loader.
+                if (!IsManagedAssembly(dll))
+                {
+                    Log.Debug("V12Pak: '{Dll}' is native; skipping assembly load", Path.GetFileName(dll));
+                    continue;
+                }
+
                 try
                 {
                     var assembly = Assembly.LoadFrom(dll);
@@ -441,6 +449,23 @@ namespace V12.Pak
             => AppDomain.CurrentDomain.GetAssemblies()
                 .FirstOrDefault(a => string.Equals(a.GetName().Name, simpleName, StringComparison.OrdinalIgnoreCase));
 
+        private static bool IsManagedAssembly(string path)
+        {
+            try
+            {
+                AssemblyName.GetAssemblyName(path);
+                return true;
+            }
+            catch (BadImageFormatException)
+            {
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         // ── DLL gamepaks ────────────────────────────────────────────────
 
         private static void LoadDlls(V12PakReader reader, V12PakManifest manifest, V12PakLoadResult result, GameRoot root)
@@ -484,7 +509,7 @@ namespace V12.Pak
 
         // ── C# component sources ────────────────────────────────────────
 
-        private static void LoadCSharpScripts(V12PakReader reader, V12PakManifest manifest, V12PakLoadResult result)
+        private static void LoadCSharpScripts(V12PakReader reader, V12PakManifest manifest, V12PakLoadResult result, GameRoot root)
         {
             var sources = new List<string>();
             foreach (var entry in manifest.CSharpScripts)
@@ -534,14 +559,20 @@ namespace V12.Pak
                 registry.RemoveSource(sourceKey);
                 int types = registry.RegisterAssembly(assembly, sourceKey);
 
+                // Source-compiled gamepaks (IV12Gamepack) follow the same
+                // lifecycle as DLL gamepaks: register now, the host starts the
+                // new paks after GameRoot.Initialize().
+                int gamepaks = root.Gamepaks.LoadFromAssembly(assembly);
+
                 V12LinkedAssemblies.Add(assembly);
                 CSharpScriptImages.Add(assembly, compile.Image);
                 result.LoadedAssemblies.Add(assembly);
                 result.LoadedCSharpGamepaks++;
                 result.RegisteredCSharpTypes += types;
+                result.LoadedGamepaks += gamepaks;
 
-                Log.Information("V12Pak '{PakName}': compiled {Sources} C# source(s) into {Assembly} ({Types} component type(s))",
-                    pakName, sources.Count, assembly.GetName().Name, types);
+                Log.Information("V12Pak '{PakName}': compiled {Sources} C# source(s) into {Assembly} ({Types} component type(s), {Gamepaks} gamepak(s))",
+                    pakName, sources.Count, assembly.GetName().Name, types, gamepaks);
             }
             catch (Exception ex)
             {
