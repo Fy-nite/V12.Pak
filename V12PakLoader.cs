@@ -78,6 +78,15 @@ namespace V12.Pak
 
         private static Serilog.ILogger Log => GameRoot.Log;
 
+        /// <summary>
+        /// Host hook for loading pak DLLs into the renderer's own assembly load
+        /// context (Godot's plugin context). Null keeps Assembly.LoadFrom.
+        /// </summary>
+        public static Func<string, Assembly>? AssemblyLoader { get; set; }
+
+        /// <summary>Host hook for finding an already-loaded assembly by simple name.</summary>
+        public static Func<string, Assembly?>? AssemblyFinder { get; set; }
+
         public static V12PakLoadResult Load(string pakPath, V12PakOptions? options = null, GameRoot? root = null)
         {
             options ??= new V12PakOptions();
@@ -402,7 +411,7 @@ namespace V12.Pak
 
                 try
                 {
-                    var assembly = Assembly.LoadFrom(dll);
+                    var assembly = LoadAssembly(dll);
                     V12LinkedAssemblies.Add(assembly);
                     Log.Information("V12Pak '{PakName}': loaded bin dependency '{Dll}'",
                         Path.GetFileName(reader.PakPath), Path.GetFileName(dll));
@@ -440,14 +449,18 @@ namespace V12.Pak
                 string candidate = Path.Combine(directory, simpleName + ".dll");
                 if (!File.Exists(candidate)) continue;
 
-                return FindLoadedAssembly(simpleName) ?? Assembly.LoadFrom(candidate);
+                return FindLoadedAssembly(simpleName) ?? LoadAssembly(candidate);
             }
             return null;
         }
 
+        private static Assembly LoadAssembly(string path)
+            => AssemblyLoader?.Invoke(path) ?? Assembly.LoadFrom(path);
+
         private static Assembly? FindLoadedAssembly(string simpleName)
-            => AppDomain.CurrentDomain.GetAssemblies()
-                .FirstOrDefault(a => string.Equals(a.GetName().Name, simpleName, StringComparison.OrdinalIgnoreCase));
+            => AssemblyFinder?.Invoke(simpleName)
+               ?? AppDomain.CurrentDomain.GetAssemblies()
+                   .FirstOrDefault(a => string.Equals(a.GetName().Name, simpleName, StringComparison.OrdinalIgnoreCase));
 
         private static bool IsManagedAssembly(string path)
         {
@@ -495,7 +508,7 @@ namespace V12.Pak
             {
                 try
                 {
-                    var assembly = Assembly.LoadFrom(dll);
+                    var assembly = LoadAssembly(dll);
                     V12LinkedAssemblies.Add(assembly);
                     result.LoadedAssemblies.Add(assembly);
                     result.RegisteredCSharpTypes += registry.RegisterAssembly(assembly, sourcePrefix + Path.GetFileName(dll));
