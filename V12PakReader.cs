@@ -40,6 +40,40 @@ namespace V12.Pak
         /// <summary>All entry names in the archive (forward-slash paths).</summary>
         public IReadOnlyCollection<string> EntryNames => _entryPaths.Keys;
 
+        /// <summary>
+        /// Reads only the manifest, streaming entries until it is found. The
+        /// builder writes <c>manifest.json</c> first, so this normally stops
+        /// after one entry and never extracts the archive. Use it to inspect a
+        /// pak before deciding whether to load it.
+        /// </summary>
+        public static V12PakManifest? ReadManifestOnly(string pakPath)
+        {
+            try
+            {
+                using var file = File.OpenRead(pakPath);
+                using var gzip = new GZipStream(file, CompressionMode.Decompress);
+                using var tar = new TarReader(gzip);
+
+                while (tar.GetNextEntry() is { } entry)
+                {
+                    if (!string.Equals(entry.Name, "manifest.json", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (entry.DataStream is null)
+                        return null;
+
+                    using var reader = new StreamReader(entry.DataStream, Encoding.UTF8);
+                    return JsonSerializer.Deserialize<V12PakManifest>(reader.ReadToEnd(), JsonOpts);
+                }
+            }
+            catch
+            {
+                // A damaged or foreign archive: callers fall back to defaults.
+            }
+
+            return null;
+        }
+
         public V12PakReader(string pakPath)
         {
             if (!File.Exists(pakPath))

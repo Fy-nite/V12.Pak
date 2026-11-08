@@ -43,6 +43,13 @@ namespace V12.Pak
         public List<string> CSharpScripts { get; set; } = new();
 
         /// <summary>
+        /// True when this pak needs an XR runtime. The host runs flat unless a
+        /// game asks for XR, so a headset is only taken over by games that
+        /// declare it here.
+        /// </summary>
+        public bool Xr { get; set; }
+
+        /// <summary>
         /// Other <c>.v12pak</c> archives this pak depends on. Values are file
         /// names, relative paths or absolute paths; they are resolved against
         /// the pak's own directory first, then
