@@ -126,12 +126,12 @@ namespace V12.Pak
                     LoadDlls(reader, manifest, result, root);
                 }
                 else
-                    WarnSkippedDlls(pakPath, manifest);
+                    result.SkippedGamepaks += WarnSkippedDlls(pakPath, manifest);
 
                 if (options.LoadCSharpScripts)
                     LoadCSharpScripts(reader, manifest, result, root);
                 else
-                    WarnSkippedCSharp(pakPath, manifest);
+                    result.SkippedGamepaks += WarnSkippedCSharp(pakPath, manifest);
 
                 if (options.AllowWorldLoading)
                     LoadWorlds(reader, manifest, resolver, result, root);
@@ -139,7 +139,7 @@ namespace V12.Pak
                 if (options.LoadContractScripts)
                     LoadScripts(reader, manifest, result, root);
                 else
-                    WarnSkippedScripts(pakPath, manifest);
+                    result.SkippedGamepaks += WarnSkippedScripts(pakPath, manifest);
 
                 // Keep dependency assets reachable through this resolver, then
                 // publish this one as the active resolver.
@@ -644,31 +644,34 @@ namespace V12.Pak
 
         // ── Skip warnings ───────────────────────────────────────────────
 
-        private static void WarnSkippedDlls(string pakPath, V12PakManifest manifest)
+        private static int WarnSkippedDlls(string pakPath, V12PakManifest manifest)
         {
             foreach (var dll in manifest.Paks)
             {
                 Log.Warning("V12Pak '{PakName}': skipping gamepak DLL '{Dll}' (LoadDlls is false)",
                     Path.GetFileName(pakPath), dll);
             }
+            return manifest.Paks.Count;
         }
 
-        private static void WarnSkippedCSharp(string pakPath, V12PakManifest manifest)
+        private static int WarnSkippedCSharp(string pakPath, V12PakManifest manifest)
         {
             foreach (var script in manifest.CSharpScripts)
             {
                 Log.Warning("V12Pak '{PakName}': skipping C# source '{Script}' (LoadCSharpScripts is false)",
                     Path.GetFileName(pakPath), script);
             }
+            return manifest.CSharpScripts.Count;
         }
 
-        private static void WarnSkippedScripts(string pakPath, V12PakManifest manifest)
+        private static int WarnSkippedScripts(string pakPath, V12PakManifest manifest)
         {
             foreach (var script in manifest.Scripts)
             {
                 Log.Warning("V12Pak '{PakName}': skipping Contract script '{Script}' (LoadContractScripts is false)",
                     Path.GetFileName(pakPath), script);
             }
+            return manifest.Scripts.Count;
         }
     }
 }
