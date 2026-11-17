@@ -40,6 +40,30 @@ game.v12pak
 ```
 
 Asset map keys are `v12://`-resolvable virtual paths; values are archive paths.
+A URI also resolves by archive path (`v12://assets/textures/crate.png`) and
+case-insensitively, so a world authored against a `--game` folder keeps working
+once it ships inside a pak. Only assets that pass `V12PakOptions` filtering are
+in either map, so a blocked asset stays unresolved however it is named.
+
+## Extraction cache
+
+The archive is extracted once per unique content, to
+`%TEMP%/V12Paks/{user}/{pakName}_{sha256}/` (or `V12_PAK_CACHE` when set). The
+same pak bytes always resolve to the same directory, so restarting a game reuses
+the previous extraction instead of leaving another full copy behind. Closing a
+pak does not delete it; stale extractions are removed after a 7-day idle period
+and can be reclaimed immediately with `V12PakCache.Purge()`.
+
+## Native libraries
+
+`bin/` carries the gamepak's native dependencies. A RID-specific pack stages that
+platform's libraries flattened at `bin/` (`assimp.dll`, `libassimp.so`,
+`libassimp.dylib`); a universal pack (`vcsdk pack --runtime any`) keeps every
+platform under `bin/runtimes/<rid>/native/`. `V12PakLoader` probes the extraction
+root's `bin/`, `paks/` and `scripts/` folders plus the `runtimes/<rid>/native`
+folder matching the running process, and hooks
+`AssemblyLoadContext.ResolvingUnmanagedDll`, so `DllImport("assimp")` finds the
+pak's copy on Linux and macOS as well as Windows.
 
 ## Contract gamepaks
 

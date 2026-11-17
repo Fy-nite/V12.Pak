@@ -11,11 +11,15 @@ namespace V12.Pak
     ///
     /// Gzip-compressed tar is not seekable, so tar entry data streams cannot be
     /// re-read after the reader advances. The reader therefore materializes the
-    /// archive to a temp directory on open and indexes entry name → extracted
-    /// path. This mirrors the extraction behaviour of the legacy
-    /// <see cref="Core.WorldLoader.LoadFromArchive"/>, and gives the engine's
-    /// path-based APIs (script components, texture loaders) real files to read.
-    /// Call <see cref="Dispose"/> to remove the temp directory.
+    /// archive to a temp directory and indexes entry name → extracted path. That
+    /// directory is content-addressed by <see cref="V12PakCache"/>: the same pak
+    /// bytes always map to the same folder, so starting the game again reuses the
+    /// previous extraction instead of writing a new copy every launch.
+    ///
+    /// The extraction stays on disk after <see cref="Dispose"/> because it is a
+    /// cache shared by every launch (and possibly by other running processes).
+    /// Use <see cref="V12PakCache.Prune"/> or <see cref="V12PakCache.Purge"/> to
+    /// reclaim space.
     /// </summary>
     public sealed class V12PakReader : IDisposable
     {
@@ -23,6 +27,8 @@ namespace V12.Pak
         {
             PropertyNameCaseInsensitive = true
         };
+
+        private const string ManifestEntryName = "manifest.json";
 
         private readonly string _pakPath;
         private readonly string _tempDir;
@@ -34,8 +40,14 @@ namespace V12.Pak
         /// <summary>Path of the opened .v12pak file.</summary>
         public string PakPath => _pakPath;
 
-        /// <summary>Directory the archive was extracted into. Removed on <see cref="Dispose"/>.</summary>
+        /// <summary>
+        /// Content-addressed directory the archive was extracted into. Shared by
+        /// every launch of the same pak and left in place on dispose.
+        /// </summary>
         public string TempDirectory => _tempDir;
+
+        /// <summary>True when this reader reused an extraction a previous run had already written.</summary>
+        public bool ReusedCache { get; }
 
         /// <summary>All entry names in the archive (forward-slash paths).</summary>
         public IReadOnlyCollection<string> EntryNames => _entryPaths.Keys;
@@ -56,7 +68,7 @@ namespace V12.Pak
 
                 while (tar.GetNextEntry() is { } entry)
                 {
-                    if (!string.Equals(entry.Name, "manifest.json", StringComparison.OrdinalIgnoreCase))
+                    if (!string.Equals(entry.Name, ManifestEntryName, StringComparison.OrdinalIgnoreCase))
                         continue;
 
                     if (entry.DataStream is null)
@@ -80,51 +92,26 @@ namespace V12.Pak
                 throw new FileNotFoundException($"v12pak not found: {pakPath}", pakPath);
 
             _pakPath = pakPath;
-            string pakName = Path.GetFileNameWithoutExtension(pakPath);
-            _tempDir = Path.Combine(Path.GetTempPath(), "V12Paks", pakName + "_" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(_tempDir);
 
             string? manifestJson = null;
-            try
+
+            _tempDir = V12PakCache.GetDirectory(pakPath, out bool reused);
+            ReusedCache = reused;
+
+            if (reused)
             {
-                using var fileStream = File.OpenRead(pakPath);
-                using var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress);
-                using var tarReader = new TarReader(gzipStream);
-
-                TarEntry? entry;
-                while ((entry = tarReader.GetNextEntry()) != null)
-                {
-                    if (entry.EntryType is TarEntryType.Directory or TarEntryType.GlobalExtendedAttributes) continue;
-                    if (string.IsNullOrEmpty(entry.Name)) continue;
-                    // PAX/other metadata entries carry no payload; older archives
-                    // also contain them, so skip them instead of dereferencing a
-                    // null DataStream.
-                    if (entry.DataStream == null) continue;
-
-                    string? safeName = SanitizeEntryName(entry.Name);
-                    if (safeName == null)
-                    {
-                        Console.WriteLine($"[V12Pak] Skipping unsafe entry name '{entry.Name}' in '{pakPath}'");
-                        continue;
-                    }
-
-                    string dest = Path.Combine(_tempDir, safeName);
-                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                    using (var source = entry.DataStream)
-                    using (var target = File.Create(dest))
-                        source.CopyTo(target);
-
-                    _entryPaths[entry.Name] = dest;
-                    if (string.Equals(entry.Name, "manifest.json", StringComparison.OrdinalIgnoreCase))
-                        manifestJson = File.ReadAllText(dest);
-                }
-            }
-            catch (InvalidDataException ex)
-            {
-                throw new InvalidDataException($"'{pakPath}' is not a valid gzip-compressed tar (v12pak) file: {ex.Message}", ex);
+                IndexExtractedDirectory();
+                manifestJson = ReadManifestText();
             }
 
-            if (manifestJson == null)
+            if (manifestJson is null)
+            {
+                ExtractArchive();
+                IndexExtractedDirectory();
+                manifestJson = ReadManifestText();
+            }
+
+            if (manifestJson is null)
                 throw new InvalidDataException($"No manifest.json found in v12pak: {pakPath}");
 
             Manifest = JsonSerializer.Deserialize<V12PakManifest>(manifestJson, JsonOpts) ?? new V12PakManifest();
@@ -154,18 +141,130 @@ namespace V12.Pak
             return path == null ? null : File.ReadAllText(path);
         }
 
-        /// <summary>Remove the extracted temp directory. Best effort.</summary>
+        /// <summary>
+        /// Keeps the content-addressed extraction so the next launch can reuse it.
+        /// Nothing is deleted here: see <see cref="V12PakCache"/> for pruning.
+        /// </summary>
         public void Dispose()
         {
+        }
+
+        // ── extraction ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// Extracts into a staging directory and commits it under the
+        /// content-hashed name. A crash mid-extract therefore leaves only a
+        /// <c>.tmp-*</c> sibling, never a half-valid cache entry.
+        /// </summary>
+        private void ExtractArchive()
+        {
+            string staging = V12PakCache.CreateStagingDirectory(_tempDir);
+
             try
             {
-                if (Directory.Exists(_tempDir))
-                    Directory.Delete(_tempDir, true);
+                ExtractInto(staging);
+
+                string? manifestPath = FindFileIgnoreCase(staging, ManifestEntryName);
+                if (manifestPath is null)
+                    throw new InvalidDataException($"No manifest.json found in v12pak: {_pakPath}");
+
+                File.WriteAllText(
+                    Path.Combine(staging, V12PakCache.MarkerFileName),
+                    $"{_pakPath}{Environment.NewLine}{DateTime.UtcNow:O}{Environment.NewLine}");
+
+                // Another process may have finished the same content while we
+                // extracted; either way the directory now holds a valid copy.
+                V12PakCache.Commit(staging, _tempDir);
             }
             catch
             {
-                // best effort
+                V12PakCache.Discard(staging);
+                throw;
             }
+        }
+
+        private void ExtractInto(string stagingDirectory)
+        {
+            try
+            {
+                using var fileStream = File.OpenRead(_pakPath);
+                using var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress);
+                using var tarReader = new TarReader(gzipStream);
+
+                TarEntry? entry;
+                while ((entry = tarReader.GetNextEntry()) != null)
+                {
+                    if (entry.EntryType is TarEntryType.Directory or TarEntryType.GlobalExtendedAttributes) continue;
+                    if (string.IsNullOrEmpty(entry.Name)) continue;
+                    // PAX/other metadata entries carry no payload; older archives
+                    // also contain them, so skip them instead of dereferencing a
+                    // null DataStream.
+                    if (entry.DataStream == null) continue;
+
+                    string? safeName = SanitizeEntryName(entry.Name);
+                    if (safeName == null)
+                    {
+                        Console.WriteLine($"[V12Pak] Skipping unsafe entry name '{entry.Name}' in '{_pakPath}'");
+                        continue;
+                    }
+
+                    string dest = Path.Combine(stagingDirectory, safeName);
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                    using (var source = entry.DataStream)
+                    using (var target = File.Create(dest))
+                        source.CopyTo(target);
+                }
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidDataException($"'{_pakPath}' is not a valid gzip-compressed tar (v12pak) file: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds the entry index from the extraction directory. Used on cache
+        /// hits, where the entries are already on disk and no archive pass is
+        /// needed. Keys are forward-slash relative paths, matching archive names.
+        /// </summary>
+        private void IndexExtractedDirectory()
+        {
+            _entryPaths.Clear();
+
+            foreach (string file in Directory.EnumerateFiles(_tempDir, "*", SearchOption.AllDirectories))
+            {
+                string relative = Path.GetRelativePath(_tempDir, file)
+                    .Replace(Path.DirectorySeparatorChar, '/')
+                    .Replace(Path.AltDirectorySeparatorChar, '/');
+
+                // Cache bookkeeping is not archive content.
+                if (string.Equals(relative, V12PakCache.MarkerFileName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                _entryPaths[relative] = file;
+            }
+        }
+
+        private string? ReadManifestText()
+        {
+            string? path = ResolveEntryPath(ManifestEntryName)
+                           ?? FindFileIgnoreCase(_tempDir, ManifestEntryName);
+            return path == null ? null : File.ReadAllText(path);
+        }
+
+        private static string? FindFileIgnoreCase(string directory, string fileName)
+        {
+            if (!Directory.Exists(directory)) return null;
+
+            string exact = Path.Combine(directory, fileName);
+            if (File.Exists(exact)) return exact;
+
+            foreach (string file in Directory.EnumerateFiles(directory))
+            {
+                if (string.Equals(Path.GetFileName(file), fileName, StringComparison.OrdinalIgnoreCase))
+                    return file;
+            }
+
+            return null;
         }
 
         /// <summary>

@@ -5,22 +5,42 @@ namespace V12.Pak
     /// <summary>
     /// <see cref="IAssetResolver"/> that serves assets from a <see cref="V12PakReader"/>.
     ///
-    /// <c>v12://</c> URIs resolve through the manifest's asset map first
-    /// (virtual key → archive path → extracted temp path), then through world
-    /// mount points. Because the reader materializes the archive to disk,
-    /// <see cref="Resolve"/> returns real readable file paths, so the engine's
-    /// path-based consumers (script components, texture loaders) work unchanged.
+    /// <c>v12://</c> URIs resolve through the manifest's asset map
+    /// (virtual key → archive path → extracted temp path), then through the same
+    /// assets addressed by their archive path, then through world mount points.
+    /// The archive-path lookup is what lets a world written for <c>--game</c>
+    /// mode keep using <c>v12://Assets/CesiumMan.glb</c> once it ships in a pak.
+    /// Only assets that survived <see cref="V12PakOptions"/> filtering are in
+    /// either map, so a blocked asset stays unresolved whichever way it is named.
+    /// Because the reader materializes the archive to disk, <see cref="Resolve"/>
+    /// returns real readable file paths, so the engine's path-based consumers
+    /// (script components, texture loaders) work unchanged.
     /// </summary>
     public sealed class V12PakAssetResolver : IAssetResolver
     {
         private readonly V12PakReader _reader;
         private readonly Dictionary<string, string> _assetMap;
+        private readonly Dictionary<string, string> _byArchivePath;
         private readonly Dictionary<string, string> _mounts = new(StringComparer.OrdinalIgnoreCase);
 
         public V12PakAssetResolver(V12PakReader reader, IReadOnlyDictionary<string, string> assets)
         {
             _reader = reader;
             _assetMap = new Dictionary<string, string>(assets, StringComparer.OrdinalIgnoreCase);
+
+            // Same assets, addressed the way a --game world addresses them
+            // ("Assets/CesiumMan.glb" rather than the manifest key). The reader's
+            // entry index is case-insensitive, so a pak packed from a Windows
+            // folder matches a world written with different casing on Linux.
+            _byArchivePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string archivePath in assets.Values)
+            {
+                if (string.IsNullOrWhiteSpace(archivePath)) continue;
+
+                string? extracted = reader.ResolveEntryPath(archivePath);
+                if (extracted is not null)
+                    _byArchivePath[archivePath] = extracted;
+            }
         }
 
         public void Mount(string mountPoint, string physicalPath)
@@ -50,6 +70,9 @@ namespace V12.Pak
                 var path = _reader.ResolveEntryPath(archivePath);
                 if (path != null) return path;
             }
+
+            if (_byArchivePath.TryGetValue(key, out var direct))
+                return direct;
 
             int slash = key.IndexOf('/');
             if (slash > 0 && _mounts.TryGetValue(key[..slash], out var baseDir))

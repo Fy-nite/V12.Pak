@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Runtime.Loader;
 using System.Xml;
 using V12.Bindings;
 using V12.Core;
@@ -48,7 +50,11 @@ namespace V12.Pak
             Resolver = resolver;
         }
 
-        /// <summary>Release the reader and its extracted temp directory, plus any dependency paks. Loaded worlds remain.</summary>
+        /// <summary>
+        /// Release the reader and any dependency paks. The content-addressed
+        /// extraction cache stays on disk so the next launch of the same pak
+        /// reuses it (<see cref="V12PakCache"/>). Loaded worlds remain.
+        /// </summary>
         public void Dispose()
         {
             foreach (var dependency in Dependencies) dependency.Dispose();
@@ -103,16 +109,20 @@ namespace V12.Pak
 
             V12PakReader? reader = null;
             V12PakLoadResult? result = null;
+            V12PakAssetResolver? resolver = null;
+            IAssetResolver? previousResolver = null;
             try
             {
                 reader = new V12PakReader(pakPath);
                 var manifest = reader.Manifest;
+                Log.Information("V12Pak '{PakName}': extraction {State} at '{Directory}'",
+                    Path.GetFileName(pakPath), reader.ReusedCache ? "cache hit" : "written", reader.TempDirectory);
                 Log.Information("V12Pak '{PakName}': {Worlds} world(s), {Assets} asset(s), {Paks} pak DLL(s), {Scripts} script(s), {CSharp} C# source(s), {Deps} dependency paks",
                     Path.GetFileName(pakPath), manifest.Worlds.Count, manifest.Assets.Count, manifest.Paks.Count,
                     manifest.Scripts.Count, manifest.CSharpScripts.Count, manifest.Dependencies.Count);
 
                 var allowedAssets = FilterAssets(manifest, options, out int skippedAssets);
-                var resolver = new V12PakAssetResolver(reader, allowedAssets);
+                resolver = new V12PakAssetResolver(reader, allowedAssets);
                 result = new V12PakLoadResult(pakPath, manifest, reader, resolver) { SkippedAssets = skippedAssets };
 
                 if (options.LoadDependencies)
@@ -133,6 +143,21 @@ namespace V12.Pak
                 else
                     result.SkippedGamepaks += WarnSkippedCSharp(pakPath, manifest);
 
+                // Native libraries are resolved lazily by the platform loader, so
+                // the probe directories have to exist before any gamepak code runs
+                // a P/Invoke.
+                RegisterNativeProbeDirectories(reader.TempDirectory);
+
+                // Publish the resolver BEFORE worlds parse. Components attach
+                // during parsing and read their assets from the registry in
+                // OnAttach (SkeletalManagerComponent imports its model right
+                // there), so registering afterwards made a pak world fail with
+                // "Model asset 'v12://Assets/...' did not resolve to a file".
+                // Dependency assets stay reachable through the fallback chain.
+                previousResolver = root.Registry.Get<IAssetResolver>("AssetResolver");
+                resolver.Fallback = previousResolver;
+                root.Registry.RegisterOrReplace("AssetResolver", resolver);
+
                 if (options.AllowWorldLoading)
                     LoadWorlds(reader, manifest, resolver, result, root);
 
@@ -141,16 +166,21 @@ namespace V12.Pak
                 else
                     result.SkippedGamepaks += WarnSkippedScripts(pakPath, manifest);
 
-                // Keep dependency assets reachable through this resolver, then
-                // publish this one as the active resolver.
-                resolver.Fallback = root.Registry.Get<IAssetResolver>("AssetResolver");
-                root.Registry.RegisterOrReplace("AssetResolver", resolver);
-
                 LoadedPakSet(root).Add(pakPath);
                 return result;
             }
             catch
             {
+                // The load never completed, so do not leave its resolver active.
+                if (resolver is not null &&
+                    ReferenceEquals(root.Registry.Get<IAssetResolver>("AssetResolver"), resolver))
+                {
+                    if (previousResolver is not null)
+                        root.Registry.RegisterOrReplace("AssetResolver", previousResolver);
+                    else
+                        root.Registry.Unregister("AssetResolver");
+                }
+
                 if (result != null) result.Dispose();
                 else reader?.Dispose();
                 throw;
@@ -396,6 +426,7 @@ namespace V12.Pak
 
             RegisterBinProbeDirectory(binDir);
 
+            var nativeLibraries = new List<string>();
             foreach (var dll in Directory.GetFiles(binDir, "*.dll"))
             {
                 string simpleName = Path.GetFileNameWithoutExtension(dll);
@@ -405,6 +436,7 @@ namespace V12.Pak
                 // throw BadImageFormat. Leave them to the platform loader.
                 if (!IsManagedAssembly(dll))
                 {
+                    nativeLibraries.Add(Path.GetFileName(dll));
                     Log.Debug("V12Pak: '{Dll}' is native; skipping assembly load", Path.GetFileName(dll));
                     continue;
                 }
@@ -421,6 +453,16 @@ namespace V12.Pak
                     Log.Warning(ex, "V12Pak: failed to load bin dependency '{Dll}'", Path.GetFileName(dll));
                 }
             }
+
+            // Natives are resolved by the platform loader, not by us. Surface
+            // them at Information level: a pak packed for another RID ships a
+            // Windows assimp.dll / TracyClient.dll that Linux can never bind, and
+            // the only previous trace was a Debug line.
+            if (nativeLibraries.Count > 0)
+            {
+                Log.Information("V12Pak '{PakName}': {Count} native library(ies) in bin/ left to the platform loader ({Names})",
+                    Path.GetFileName(reader.PakPath), nativeLibraries.Count, string.Join(", ", nativeLibraries));
+            }
         }
 
         private static void RegisterBinProbeDirectory(string directory)
@@ -434,6 +476,256 @@ namespace V12.Pak
                 BinResolveHooked = true;
                 AppDomain.CurrentDomain.AssemblyResolve += ResolveFromBinDirectories;
             }
+        }
+
+        // ── Native dependencies (bin/, paks/, runtimes/<rid>/native) ────
+
+        private static readonly object NativeResolveGate = new();
+        private static readonly List<string> NativeProbeDirectoryList = new();
+        private static bool NativeResolveHooked;
+
+        [ThreadStatic] private static bool _resolvingNative;
+
+        /// <summary>
+        /// Directories probed for native libraries shipped by loaded paks, in
+        /// probe order: the pak root folders (<c>bin/</c>, <c>paks/</c>,
+        /// <c>scripts/</c>), then the <c>runtimes/&lt;rid&gt;/native</c> folders that
+        /// match the running platform.
+        /// </summary>
+        public static IReadOnlyList<string> NativeProbeDirectories
+        {
+            get
+            {
+                lock (NativeResolveGate) return NativeProbeDirectoryList.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Finds a native library a pak ships, for the current platform. Accepts
+        /// the name a <c>DllImport</c> uses (<c>assimp</c>, <c>TracyClient</c>) or
+        /// the file name (<c>libassimp.so</c>). Returns false when no pak-provided
+        /// match exists.
+        /// </summary>
+        public static bool TryFindNativeLibrary(string libraryName, out string path)
+        {
+            path = string.Empty;
+
+            try
+            {
+                foreach (string candidate in EnumerateNativeCandidates(libraryName))
+                {
+                    if (!File.Exists(candidate)) continue;
+
+                    path = candidate;
+                    return true;
+                }
+            }
+            catch (IOException)
+            {
+                // A probe directory disappeared mid-scan (another process
+                // pruning the cache); the platform loader still gets its turn.
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Registers the native probe directories for one extracted pak and hooks
+        /// the unmanaged resolver once per process. Managed assemblies already
+        /// get an <see cref="AppDomain.AssemblyResolve"/> hook; native libraries
+        /// need <see cref="AssemblyLoadContext.ResolvingUnmanagedDll"/>, which is
+        /// what makes <c>assimp.dll</c>/<c>libassimp.so</c> in a pak findable on
+        /// Linux and macOS.
+        /// </summary>
+        private static void RegisterNativeProbeDirectories(string extractionRoot)
+        {
+            var directories = new List<string>();
+
+            foreach (string folder in new[] { "bin", "paks", "scripts" })
+            {
+                string directory = Path.Combine(extractionRoot, folder);
+                if (!Directory.Exists(directory)) continue;
+
+                directories.Add(directory);
+                directories.AddRange(PlatformNativeRidDirectories(directory));
+            }
+
+            if (directories.Count == 0) return;
+
+            lock (NativeResolveGate)
+            {
+                foreach (string directory in directories)
+                {
+                    if (!NativeProbeDirectoryList.Contains(directory, StringComparer.OrdinalIgnoreCase))
+                        NativeProbeDirectoryList.Add(directory);
+                }
+
+                if (NativeResolveHooked) return;
+                NativeResolveHooked = true;
+
+                AssemblyLoadContext.Default.ResolvingUnmanagedDll += ResolveNativeFromPakDirectories;
+
+                var context = AssemblyLoadContext.GetLoadContext(typeof(V12PakLoader).Assembly);
+                if (context is not null && !ReferenceEquals(context, AssemblyLoadContext.Default))
+                    context.ResolvingUnmanagedDll += ResolveNativeFromPakDirectories;
+            }
+        }
+
+        /// <summary>
+        /// <c>runtimes/&lt;rid&gt;/native</c> folders under <paramref name="directory"/>
+        /// that apply to this process. A portable (`--runtime any`) pak carries
+        /// every RID, so the matching one is chosen here rather than at pack time.
+        /// </summary>
+        private static IEnumerable<string> PlatformNativeRidDirectories(string directory)
+        {
+            string runtimes = Path.Combine(directory, "runtimes");
+            if (!Directory.Exists(runtimes)) yield break;
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string rid in PlatformRuntimeIdentifiers())
+            {
+                string native = Path.Combine(runtimes, rid, "native");
+                if (Directory.Exists(native) && seen.Add(native))
+                    yield return native;
+            }
+
+            // Odd RIDs (win10-x64, linux-musl-x64 on a glibc host, ...), but
+            // never another architecture's native folder.
+            string os = CurrentOsSegment();
+            string arch = CurrentArchSegment();
+            foreach (string candidate in Directory.EnumerateDirectories(runtimes))
+            {
+                string name = Path.GetFileName(candidate);
+                bool isAny = name.Equals("any", StringComparison.OrdinalIgnoreCase);
+                if (!isAny && !name.StartsWith(os + "-", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!isAny && arch.Length > 0 && !name.EndsWith("-" + arch, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string native = Path.Combine(candidate, "native");
+                if (Directory.Exists(native) && seen.Add(native))
+                    yield return native;
+            }
+        }
+
+        private static IEnumerable<string> PlatformRuntimeIdentifiers()
+        {
+            string rid = RuntimeInformation.RuntimeIdentifier;
+            if (!string.IsNullOrWhiteSpace(rid)) yield return rid;
+
+            string os = CurrentOsSegment();
+            string arch = CurrentArchSegment();
+
+            if (arch.Length == 0)
+            {
+                yield return "any";
+                yield break;
+            }
+
+            yield return $"{os}-{arch}";
+            if (os == "linux" && !rid.Contains("musl", StringComparison.OrdinalIgnoreCase))
+                yield return $"linux-musl-{arch}";
+            yield return "any";
+        }
+
+        private static string CurrentOsSegment()
+            => OperatingSystem.IsWindows() ? "win" : OperatingSystem.IsMacOS() ? "osx" : "linux";
+
+        private static string CurrentArchSegment()
+            => RuntimeInformation.ProcessArchitecture switch
+            {
+                Architecture.X64 => "x64",
+                Architecture.X86 => "x86",
+                Architecture.Arm64 => "arm64",
+                Architecture.Arm => "arm",
+                _ => string.Empty,
+            };
+
+        private static IEnumerable<string> EnumerateNativeCandidates(string libraryName)
+        {
+            if (string.IsNullOrWhiteSpace(libraryName)) yield break;
+
+            string[] directories;
+            lock (NativeResolveGate) directories = NativeProbeDirectoryList.ToArray();
+
+            foreach (string directory in directories)
+            {
+                foreach (string candidate in CandidateNativePaths(directory, libraryName))
+                    yield return candidate;
+            }
+        }
+
+        private static IEnumerable<string> CandidateNativePaths(string directory, string libraryName)
+        {
+            if (!Directory.Exists(directory)) yield break;
+
+            if (Path.IsPathRooted(libraryName))
+            {
+                yield return libraryName;
+                yield break;
+            }
+
+            // A caller may pass the exact file name ("libassimp.so").
+            if (Path.HasExtension(libraryName))
+                yield return Path.Combine(directory, libraryName);
+
+            // DllImport names are bare ("assimp"), so cover the platform's
+            // decorated forms: assimp.dll, libassimp.so, TracyClient.so (no lib),
+            // libassimp.dylib.
+            string[] stems = libraryName.StartsWith("lib", StringComparison.Ordinal) && libraryName.Length > 3
+                ? new[] { libraryName, libraryName[3..] }
+                : new[] { libraryName, "lib" + libraryName };
+
+            foreach (string stem in stems)
+            {
+                yield return Path.Combine(directory, stem + ".dll");
+                yield return Path.Combine(directory, stem + ".so");
+                yield return Path.Combine(directory, stem + ".dylib");
+            }
+
+            // Versioned sonames (libfoo.so.1).
+            foreach (string stem in stems)
+            {
+                foreach (string file in Directory.EnumerateFiles(directory, stem + ".so.*"))
+                    yield return file;
+            }
+        }
+
+        private static IntPtr ResolveNativeFromPakDirectories(Assembly assembly, string libraryName)
+        {
+            if (_resolvingNative) return IntPtr.Zero;
+
+            _resolvingNative = true;
+            try
+            {
+                // Try every candidate rather than stopping at the first file that
+                // exists: a wrong-architecture copy in bin/ must not shadow the
+                // matching runtimes/<rid>/native library.
+                foreach (string candidate in EnumerateNativeCandidates(libraryName))
+                {
+                    if (!File.Exists(candidate)) continue;
+                    if (!NativeLibrary.TryLoad(candidate, out IntPtr handle) || handle == IntPtr.Zero)
+                        continue;
+
+                    Log.Information("V12Pak: native dependency '{Library}' resolved from pak ('{Path}')",
+                        libraryName, candidate);
+                    return handle;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "V12Pak: native dependency '{Library}' failed to load from pak", libraryName);
+            }
+            finally
+            {
+                _resolvingNative = false;
+            }
+
+            return IntPtr.Zero;
         }
 
         private static Assembly? ResolveFromBinDirectories(object? sender, ResolveEventArgs args)
