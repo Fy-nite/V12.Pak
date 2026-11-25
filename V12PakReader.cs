@@ -31,13 +31,18 @@ namespace V12.Pak
         private const string ManifestEntryName = "manifest.json";
 
         private readonly string _pakPath;
-        private readonly string _tempDir;
+        private readonly Func<Stream> _openStream;
+        private string _tempDir = "";
         private readonly Dictionary<string, string> _entryPaths = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>The parsed manifest, or an empty manifest when the archive lacks one.</summary>
-        public V12PakManifest Manifest { get; }
+        public V12PakManifest Manifest { get; private set; } = new();
 
-        /// <summary>Path of the opened .v12pak file.</summary>
+        /// <summary>
+        /// Path of the opened <c>.v12pak</c> file, or the name it was opened
+        /// under when it came from a stream (for example
+        /// <c>res://MyGame.v12pak</c> on Android).
+        /// </summary>
         public string PakPath => _pakPath;
 
         /// <summary>
@@ -47,7 +52,7 @@ namespace V12.Pak
         public string TempDirectory => _tempDir;
 
         /// <summary>True when this reader reused an extraction a previous run had already written.</summary>
-        public bool ReusedCache { get; }
+        public bool ReusedCache { get; private set; }
 
         /// <summary>All entry names in the archive (forward-slash paths).</summary>
         public IReadOnlyCollection<string> EntryNames => _entryPaths.Keys;
@@ -59,10 +64,18 @@ namespace V12.Pak
         /// pak before deciding whether to load it.
         /// </summary>
         public static V12PakManifest? ReadManifestOnly(string pakPath)
+            => ReadManifestOnly(() => File.OpenRead(pakPath));
+
+        /// <summary>
+        /// Reads only the manifest from a stream-backed pak (an archive embedded
+        /// in <c>res://</c> or retrieved some other way). The stream factory is
+        /// called once and never extracts the archive.
+        /// </summary>
+        public static V12PakManifest? ReadManifestOnly(Func<Stream> openStream)
         {
             try
             {
-                using var file = File.OpenRead(pakPath);
+                using var file = openStream();
                 using var gzip = new GZipStream(file, CompressionMode.Decompress);
                 using var tar = new TarReader(gzip);
 
@@ -91,12 +104,35 @@ namespace V12.Pak
             if (!File.Exists(pakPath))
                 throw new FileNotFoundException($"v12pak not found: {pakPath}", pakPath);
 
-            _pakPath = pakPath;
+            _pakPath = Path.GetFullPath(pakPath);
+            _openStream = () => File.OpenRead(_pakPath);
+            Initialize(V12PakCache.GetDirectory(_pakPath, out bool reused), reused);
+        }
+
+        /// <summary>
+        /// Opens a pak that is not a plain file. The archive is read through
+        /// <paramref name="openStream"/> and extracted exactly like a file pak;
+        /// <paramref name="pakName"/> is the display name and the cache stem
+        /// (for example <c>res://MyGame.v12pak</c>). The factory is called once
+        /// for the cache key and once for extraction, so it must open a fresh
+        /// seekable stream each time.
+        /// </summary>
+        public V12PakReader(string pakName, Func<Stream> openStream)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(pakName);
+            ArgumentNullException.ThrowIfNull(openStream);
+
+            _pakPath = pakName;
+            _openStream = openStream;
+            Initialize(V12PakCache.GetDirectory(pakName, openStream, out bool reused), reused);
+        }
+
+        private void Initialize(string tempDirectory, bool reused)
+        {
+            _tempDir = tempDirectory;
+            ReusedCache = reused;
 
             string? manifestJson = null;
-
-            _tempDir = V12PakCache.GetDirectory(pakPath, out bool reused);
-            ReusedCache = reused;
 
             if (reused)
             {
@@ -112,7 +148,7 @@ namespace V12.Pak
             }
 
             if (manifestJson is null)
-                throw new InvalidDataException($"No manifest.json found in v12pak: {pakPath}");
+                throw new InvalidDataException($"No manifest.json found in v12pak: {_pakPath}");
 
             Manifest = JsonSerializer.Deserialize<V12PakManifest>(manifestJson, JsonOpts) ?? new V12PakManifest();
         }
@@ -187,7 +223,7 @@ namespace V12.Pak
         {
             try
             {
-                using var fileStream = File.OpenRead(_pakPath);
+                using var fileStream = _openStream();
                 using var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress);
                 using var tarReader = new TarReader(gzipStream);
 

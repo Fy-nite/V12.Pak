@@ -99,10 +99,49 @@ namespace V12.Pak
             root ??= GameRoot.Instance
                 ?? throw new InvalidOperationException("No active GameRoot. Pass a GameRoot instance to Load().");
 
-            return LoadCore(Path.GetFullPath(pakPath), options, root, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            string fullPath = Path.GetFullPath(pakPath);
+            return LoadCore(
+                fullPath,
+                () => new V12PakReader(fullPath),
+                options,
+                root,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
-        private static V12PakLoadResult LoadCore(string pakPath, V12PakOptions options, GameRoot root, HashSet<string> chain)
+        /// <summary>
+        /// Loads a pak supplied as a stream rather than a file path: an archive
+        /// embedded in the host's own package (Godot's <c>res://</c> on Android)
+        /// or downloaded by the game. <paramref name="pakName"/> is the identity
+        /// used for the dependency chain, logs and cache stem. The factory must
+        /// open a fresh seekable stream each time it is called.
+        /// </summary>
+        public static V12PakLoadResult LoadFromStream(
+            string pakName,
+            Func<Stream> openStream,
+            V12PakOptions? options = null,
+            GameRoot? root = null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(pakName);
+            ArgumentNullException.ThrowIfNull(openStream);
+
+            options ??= new V12PakOptions();
+            root ??= GameRoot.Instance
+                ?? throw new InvalidOperationException("No active GameRoot. Pass a GameRoot instance to LoadFromStream().");
+
+            return LoadCore(
+                pakName,
+                () => new V12PakReader(pakName, openStream),
+                options,
+                root,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        }
+
+        private static V12PakLoadResult LoadCore(
+            string pakPath,
+            Func<V12PakReader> createReader,
+            V12PakOptions options,
+            GameRoot root,
+            HashSet<string> chain)
         {
             if (!chain.Add(pakPath))
                 throw new InvalidOperationException($"Circular .v12pak dependency detected at '{pakPath}'.");
@@ -113,7 +152,7 @@ namespace V12.Pak
             IAssetResolver? previousResolver = null;
             try
             {
-                reader = new V12PakReader(pakPath);
+                reader = createReader();
                 var manifest = reader.Manifest;
                 Log.Information("V12Pak '{PakName}': extraction {State} at '{Directory}'",
                     Path.GetFileName(pakPath), reader.ReusedCache ? "cache hit" : "written", reader.TempDirectory);
@@ -123,7 +162,7 @@ namespace V12.Pak
 
                 var allowedAssets = FilterAssets(manifest, options, out int skippedAssets);
                 resolver = new V12PakAssetResolver(reader, allowedAssets);
-                result = new V12PakLoadResult(pakPath, manifest, reader, resolver) { SkippedAssets = skippedAssets };
+                result = new V12PakLoadResult(reader.PakPath, manifest, reader, resolver) { SkippedAssets = skippedAssets };
 
                 if (options.LoadDependencies)
                     LoadDependencies(reader, manifest, options, root, result, chain);
@@ -235,7 +274,12 @@ namespace V12.Pak
 
                 try
                 {
-                    var dependencyResult = LoadCore(fullPath, options, root, chain);
+                    var dependencyResult = LoadCore(
+                        fullPath,
+                        () => new V12PakReader(fullPath),
+                        options,
+                        root,
+                        chain);
                     result.Dependencies.Add(dependencyResult);
                     Log.Information("V12Pak '{PakName}': loaded dependency '{Dependency}'", pakName, Path.GetFileName(fullPath));
                 }
@@ -280,7 +324,11 @@ namespace V12.Pak
 
         private static IEnumerable<string> DependencyCandidates(string dependency, string pakPath, V12PakOptions options)
         {
-            string pakDirectory = Path.GetDirectoryName(Path.GetFullPath(pakPath)) ?? Directory.GetCurrentDirectory();
+            // A stream-backed pak has no directory on disk; its embedded
+            // dependencies/*.v12pak entries are checked before this fallback.
+            string? pakDirectory = File.Exists(pakPath)
+                ? Path.GetDirectoryName(Path.GetFullPath(pakPath))
+                : null;
 
             foreach (var name in DependencyFileNames(dependency))
             {
@@ -290,7 +338,8 @@ namespace V12.Pak
                     continue;
                 }
 
-                yield return Path.Combine(pakDirectory, name);
+                if (pakDirectory is not null)
+                    yield return Path.Combine(pakDirectory, name);
 
                 foreach (var searchPath in options.DependencySearchPaths)
                 {
@@ -460,8 +509,20 @@ namespace V12.Pak
             // the only previous trace was a Debug line.
             if (nativeLibraries.Count > 0)
             {
-                Log.Information("V12Pak '{PakName}': {Count} native library(ies) in bin/ left to the platform loader ({Names})",
-                    Path.GetFileName(reader.PakPath), nativeLibraries.Count, string.Join(", ", nativeLibraries));
+                if (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS())
+                {
+                    // The mobile linker will not open a library from the
+                    // extraction directory, so this is a packaging error, not a
+                    // RID mismatch.
+                    Log.Warning("V12Pak '{PakName}': {Count} native library(ies) in bin/ cannot be loaded on mobile " +
+                                "({Names}); package them inside the app instead",
+                        Path.GetFileName(reader.PakPath), nativeLibraries.Count, string.Join(", ", nativeLibraries));
+                }
+                else
+                {
+                    Log.Information("V12Pak '{PakName}': {Count} native library(ies) in bin/ left to the platform loader ({Names})",
+                        Path.GetFileName(reader.PakPath), nativeLibraries.Count, string.Join(", ", nativeLibraries));
+                }
             }
         }
 
@@ -542,6 +603,18 @@ namespace V12.Pak
         /// </summary>
         private static void RegisterNativeProbeDirectories(string extractionRoot)
         {
+            // Android and iOS refuse to dlopen a library from app-writable
+            // storage, so an extracted bin/ copy is unusable even though the
+            // file is there. Native dependencies belong in the host's own
+            // package (lib/<abi>/ on Android) instead of the pak.
+            if (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS())
+            {
+                Log.Debug(
+                    "V12Pak: skipping native probe directories on mobile; " +
+                    "native libraries must ship with the host application.");
+                return;
+            }
+
             var directories = new List<string>();
 
             foreach (string folder in new[] { "bin", "paks", "scripts" })

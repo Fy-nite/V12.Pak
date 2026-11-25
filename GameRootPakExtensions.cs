@@ -16,6 +16,18 @@ namespace V12.Pak
         public static V12PakLoadResult LoadPak(this GameRoot root, string pakPath, V12PakOptions? options = null)
             => V12PakLoader.Load(pakPath, options, root);
 
+        /// <summary>
+        /// Load a pak that is not a plain file, such as one embedded in the
+        /// host's own package (<c>res://</c> on Android). The factory must open
+        /// a fresh seekable stream each time it is called.
+        /// </summary>
+        public static V12PakLoadResult LoadPak(
+            this GameRoot root,
+            string pakName,
+            Func<Stream> openStream,
+            V12PakOptions? options = null)
+            => V12PakLoader.LoadFromStream(pakName, openStream, options, root);
+
         /// <summary>Build a .v12pak archive from a directory of game content.</summary>
         public static void BuildPak(this GameRoot root, string inputDirectory, string outputPath)
             => V12PakBuilder.Build(inputDirectory, outputPath);

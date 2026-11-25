@@ -118,8 +118,30 @@ into `ContractGamepack`s in the same loader.
 
 Keep the returned `V12PakLoadResult` alive while the pak is in use. Its
 `Reader` materializes the archive to a temp directory (gzip tar is not
-seekable, and the engine's path-based APIs need real files); calling
-`result.Dispose()` removes that directory.
+seekable, and the engine's path-based APIs need real files); `result.Dispose()`
+releases the reader, while the content-addressed extraction stays on disk for
+the next launch (`V12PakCache`).
+
+### Embedded / stream-backed paks
+
+A host that packages the archive inside its own app (Godot's `res://` on
+Android) cannot pass a file path. Use the stream overload:
+
+```csharp
+var result = root.LoadPak(
+    "res://MyGame.v12pak",
+    () => Godot.FileAccess.Open("res://MyGame.v12pak", Godot.FileAccess.ModeFlags.Read),
+    new V12PakOptions { LoadDlls = true, LoadContractScripts = true });
+```
+
+The factory must open a fresh seekable stream each time it is called. The
+extraction cache key samples the stream's length and first/last 64 KiB, so a
+multi-gigabyte embedded pak is not read end to end just to find its cache
+directory. `V12PakCache.HashStream` is the same routine if a host needs the key.
+
+On Android and iOS the platform refuses to load native libraries from
+app-writable storage. A pak's `bin/` natives are skipped there (with a warning);
+package native dependencies inside the app (`lib/<abi>/` on Android).
 
 ## Building
 

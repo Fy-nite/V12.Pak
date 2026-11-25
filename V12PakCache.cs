@@ -76,11 +76,36 @@ namespace V12.Pak
         public static string GetDirectory(string pakPath, out bool reused)
         {
             string fullPath = Path.GetFullPath(pakPath);
-            string stem = Path.GetFileNameWithoutExtension(fullPath);
 
             // Hash first: the directory name is the content, so a missing or
             // unreadable pak fails here rather than half-populating a cache.
             string hash = HashFile(fullPath);
+
+            return GetDirectoryCore(Path.GetFileNameWithoutExtension(fullPath), hash, out reused);
+        }
+
+        /// <summary>
+        /// Directory for a pak that is not a plain file (an embedded
+        /// <c>res://</c> pak on Android, a download held in memory). The stream
+        /// is opened once to sample its length and ends, so a multi-gigabyte
+        /// archive does not have to be read end to end on every launch.
+        /// </summary>
+        /// <remarks>
+        /// The key is a sampled SHA-256 of the length plus the first and last
+        /// 64 KiB. A same-length update that changes only the middle would reuse
+        /// the previous extraction; paks change size whenever their content is
+        /// rebuilt, so that is the cheaper trade for large embedded archives.
+        /// </remarks>
+        public static string GetDirectory(string pakName, Func<Stream> openStream, out bool reused)
+        {
+            string hash = HashStream(openStream);
+            return GetDirectoryCore(StemOf(pakName), hash, out reused);
+        }
+
+        private static string GetDirectoryCore(string stem, string hash, out bool reused)
+        {
+            if (string.IsNullOrWhiteSpace(stem))
+                stem = "pak";
 
             string root = RootDirectory;
             Directory.CreateDirectory(root);
@@ -94,6 +119,12 @@ namespace V12.Pak
             PruneStaging(root);
             Prune(stem);
             return directory;
+        }
+
+        private static string StemOf(string pakName)
+        {
+            string normalized = pakName.Replace('\\', '/');
+            return Path.GetFileNameWithoutExtension(normalized);
         }
 
         /// <summary>True when a directory holds a finished extraction.</summary>
@@ -208,6 +239,50 @@ namespace V12.Pak
                 WriteFingerprint(fullPath, fingerprint, hash);
 
             return hash;
+        }
+
+        /// <summary>
+        /// Sampled SHA-256 (first 128 bits, lowercase hex) of a stream's length
+        /// and ends. The stream is opened once and must be seekable, so a host
+        /// that embeds a pak in its own package (Godot's <c>res://</c> on
+        /// Android) can key the extraction cache without copying the archive to
+        /// disk first. The position is left where the sample finished.
+        /// </summary>
+        public static string HashStream(Func<Stream> openStream)
+        {
+            ArgumentNullException.ThrowIfNull(openStream);
+
+            using var stream = openStream()
+                ?? throw new InvalidDataException("The pak stream could not be opened.");
+
+            if (!stream.CanSeek)
+            {
+                throw new NotSupportedException(
+                    "A stream-backed v12pak must be seekable so its cache key can be sampled.");
+            }
+
+            long length = stream.Length;
+            int headLength = (int)Math.Min(length, SampleBytes);
+            long tailStart = Math.Max(headLength, length - SampleBytes);
+            int tailLength = (int)(length - tailStart);
+
+            var sample = new byte[8 + headLength + tailLength];
+            BitConverter.TryWriteBytes(sample.AsSpan(0, 8), length);
+
+            if (headLength > 0)
+            {
+                stream.Position = 0;
+                stream.ReadExactly(sample.AsSpan(8, headLength));
+            }
+
+            if (tailLength > 0)
+            {
+                stream.Position = tailStart;
+                stream.ReadExactly(sample.AsSpan(8 + headLength, tailLength));
+            }
+
+            byte[] digest = SHA256.HashData(sample);
+            return Convert.ToHexString(digest).ToLowerInvariant()[..HashCharacters];
         }
 
         // ── pruning ─────────────────────────────────────────────────────
