@@ -17,19 +17,36 @@ namespace V12.Pak
             WriteIndented = true
         };
 
-        private readonly FileStream _fileStream;
+        private readonly Stream _fileStream;
         private readonly GZipStream _gzipStream;
         private readonly TarWriter _tarWriter;
         private readonly HashSet<string> _written = new(StringComparer.OrdinalIgnoreCase);
 
         public V12PakWriter(string outputPath)
+            : this(CreateOutput(outputPath))
+        {
+        }
+
+        /// <summary>
+        /// Writes the archive to an arbitrary stream, so a split build can feed a
+        /// rolling part stream instead of a single file.
+        /// </summary>
+        public V12PakWriter(Stream outputStream)
+        {
+            ArgumentNullException.ThrowIfNull(outputStream);
+
+            _fileStream = outputStream;
+            _gzipStream = new GZipStream(_fileStream, CompressionLevel.Optimal);
+            _tarWriter = new TarWriter(_gzipStream);
+        }
+
+        private static Stream CreateOutput(string outputPath)
         {
             if (string.IsNullOrWhiteSpace(outputPath))
                 throw new ArgumentException("Output path is required.", nameof(outputPath));
+
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
-            _fileStream = File.Create(outputPath);
-            _gzipStream = new GZipStream(_fileStream, CompressionLevel.Optimal);
-            _tarWriter = new TarWriter(_gzipStream);
+            return File.Create(outputPath);
         }
 
         /// <summary>Write a file entry from a byte array.</summary>

@@ -32,10 +32,10 @@ namespace V12.Pak
         /// <c>manifest.json</c> when present, or an auto-generated manifest when
         /// it is not.
         /// </summary>
-        public static void Build(string inputDirectory, string outputPath)
+        public static V12PakBuildResult Build(string inputDirectory, string outputPath, long splitBytes = 0)
         {
             ValidateInputDirectory(inputDirectory);
-            Build(inputDirectory, outputPath, ReadOrBuildManifest(inputDirectory));
+            return Build(inputDirectory, outputPath, ReadOrBuildManifest(inputDirectory), splitBytes);
         }
 
         /// <summary>
@@ -43,16 +43,45 @@ namespace V12.Pak
         /// <paramref name="manifest"/> (no auto-detection). Referenced entries
         /// are validated against the input directory before packing.
         /// </summary>
-        public static void Build(string inputDirectory, string outputPath, V12PakManifest manifest)
+        public static V12PakBuildResult Build(string inputDirectory, string outputPath, V12PakManifest manifest)
+            => Build(inputDirectory, outputPath, manifest, splitBytes: 0);
+
+        /// <summary>
+        /// Pack into numbered parts of at most <paramref name="splitBytes"/> each.
+        /// The parts are a byte-level split of one archive; when the whole archive
+        /// fits in one part it is renamed to <paramref name="outputPath"/> instead.
+        /// </summary>
+        public static V12PakBuildResult Build(
+            string inputDirectory,
+            string outputPath,
+            V12PakManifest manifest,
+            long splitBytes)
         {
             ValidateInputDirectory(inputDirectory);
             ArgumentNullException.ThrowIfNull(manifest);
 
             ValidateManifest(inputDirectory, manifest);
 
-            using var writer = new V12PakWriter(outputPath);
-            writer.WriteManifest(manifest);
-            WriteAllFiles(writer, inputDirectory, outputPath, manifest);
+            if (splitBytes > 0)
+            {
+                using var parts = new V12PakPartStream(outputPath, splitBytes);
+
+                using (var splitWriter = new V12PakWriter(parts))
+                {
+                    splitWriter.WriteManifest(manifest);
+                    WriteAllFiles(splitWriter, inputDirectory, outputPath, manifest);
+                }
+
+                return new V12PakBuildResult(parts.PartPaths.ToArray(), parts.PartInfo);
+            }
+
+            using (var writer = new V12PakWriter(outputPath))
+            {
+                writer.WriteManifest(manifest);
+                WriteAllFiles(writer, inputDirectory, outputPath, manifest);
+            }
+
+            return V12PakBuildResult.Single(outputPath);
         }
 
         /// <summary>
@@ -60,7 +89,7 @@ namespace V12.Pak
         /// <paramref name="manifestPath"/> (absolute, or relative to the input
         /// directory). This is the entry point behind <c>vcsdk build --manifest</c>.
         /// </summary>
-        public static void Build(string inputDirectory, string outputPath, string manifestPath)
+        public static V12PakBuildResult Build(string inputDirectory, string outputPath, string manifestPath, long splitBytes = 0)
         {
             ValidateInputDirectory(inputDirectory);
 
@@ -71,7 +100,7 @@ namespace V12.Pak
             if (!File.Exists(resolved))
                 throw new FileNotFoundException($"Manifest file not found: {resolved}", resolved);
 
-            Build(inputDirectory, outputPath, LoadManifest(resolved));
+            return Build(inputDirectory, outputPath, LoadManifest(resolved), splitBytes);
         }
 
         /// <summary>Read a manifest.json from disk (case-insensitive keys, comments and trailing commas allowed).</summary>
@@ -261,7 +290,11 @@ namespace V12.Pak
         {
             string outputFullPath = Path.GetFullPath(outputPath);
 
-            foreach (var file in Directory.EnumerateFiles(inputDirectory, "*", SearchOption.AllDirectories))
+            // Snapshot before writing: a split build creates part files in the
+            // same directory, and a lazy enumeration would see them.
+            var files = Directory.EnumerateFiles(inputDirectory, "*", SearchOption.AllDirectories).ToList();
+
+            foreach (var file in files)
             {
                 string relative = Path.GetRelativePath(inputDirectory, file).Replace('\\', '/');
                 if (string.Equals(relative, "manifest.json", StringComparison.OrdinalIgnoreCase)) continue;

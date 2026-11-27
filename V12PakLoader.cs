@@ -42,6 +42,21 @@ namespace V12.Pak
         public IReadOnlyList<string> LoadedDependencyPaths
             => Dependencies.Select(d => d.PakPath).ToList();
 
+        /// <summary>True once <see cref="Unload"/> has torn this pak out of its GameRoot.</summary>
+        public bool IsUnloaded => _unloaded;
+
+        private static Serilog.ILogger Log => GameRoot.Log;
+
+        private GameRoot? _root;
+        private IAssetResolver? _previousResolver;
+        private readonly List<CSharpScriptLoadContext> _scriptContexts = new();
+        private readonly List<IV12Gamepack> _scriptGamepaks = new();
+        private readonly List<string> _componentSourceKeys = new();
+        private readonly List<string> _binProbeDirectories = new();
+        private readonly List<string> _nativeProbeDirectories = new();
+        private bool _unloaded;
+        private bool _disposed;
+
         public V12PakLoadResult(string pakPath, V12PakManifest manifest, V12PakReader reader, V12PakAssetResolver resolver)
         {
             PakPath = pakPath;
@@ -53,13 +68,211 @@ namespace V12.Pak
         /// <summary>
         /// Release the reader and any dependency paks. The content-addressed
         /// extraction cache stays on disk so the next launch of the same pak
-        /// reuses it (<see cref="V12PakCache"/>). Loaded worlds remain.
+        /// reuses it (<see cref="V12PakCache"/>). Loaded worlds remain in the
+        /// GameRoot; use <see cref="Unload"/> for the full inverse of loading.
         /// </summary>
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
+
             foreach (var dependency in Dependencies) dependency.Dispose();
             Dependencies.Clear();
             Reader.Dispose();
+        }
+
+        /// <summary>
+        /// Removes everything this pak added to its <see cref="GameRoot"/>: its
+        /// worlds and world sessions, its gamepaks, its compiled component
+        /// source generation, its asset resolver, its probe directories and its
+        /// entry in the loaded-pak set. Must run on the game thread, like loading.
+        /// <para>
+        /// This is not a hot-swap of a pak that ships DLLs. Assemblies loaded
+        /// from <c>paks/*.dll</c> live in the host's assembly load context and
+        /// cannot be unloaded; only <c>CSharpScripts</c> compile into collectible
+        /// contexts that this releases. A host that wants a new build of a
+        /// DLL-backed pak launches a new process.
+        /// </para>
+        /// </summary>
+        public void Unload()
+        {
+            if (_unloaded) return;
+            _unloaded = true;
+
+            // Dependencies were loaded before this pak, so tear them down after.
+            foreach (var dependency in Dependencies.ToArray())
+            {
+                try { dependency.Unload(); }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex,
+                        "V12Pak '{PakName}': dependency unload failed", Path.GetFileName(PakPath));
+                }
+            }
+            Dependencies.Clear();
+
+            var root = _root;
+            if (root is not null)
+            {
+                // Gamepaks first: their services and subscriptions point at
+                // components in the worlds below, so stop them before detaching.
+                foreach (var assembly in LoadedAssemblies.ToArray())
+                {
+                    try { root.Gamepaks.RemoveFromAssembly(assembly); }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex,
+                            "V12Pak '{PakName}': gamepak teardown failed for '{Assembly}'",
+                            Path.GetFileName(PakPath), assembly.GetName().Name);
+                    }
+                }
+
+                // Contract/ObjektRT script entrypoints are engine assemblies, so
+                // RemoveFromAssembly does not see them.
+                foreach (var gamepak in _scriptGamepaks.ToArray())
+                {
+                    try { root.Gamepaks.Remove(gamepak); }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex,
+                            "V12Pak '{PakName}': script gamepak teardown failed for '{Gamepak}'",
+                            Path.GetFileName(PakPath), gamepak.Name);
+                    }
+                }
+                _scriptGamepaks.Clear();
+
+                foreach (var world in LoadedWorlds.ToArray())
+                {
+                    try
+                    {
+                        var session = root.FindWorldSession(world);
+                        if (session is not null)
+                        {
+                            // CloseWorld detaches components, untracks the world
+                            // and removes it from GameRoot.Worlds. A pak never
+                            // loads a persistent world, so Shutdown always wins;
+                            // fall back to manual removal if it does not.
+                            var closeResult = root.CloseWorld(session, new WorldCloseOptions
+                            {
+                                Mode = WorldCloseMode.Shutdown,
+                                Confirmed = true,
+                            });
+
+                            if (closeResult is not (WorldCloseResult.Closed or WorldCloseResult.Left))
+                            {
+                                root.Worlds.Remove(world);
+                                world.DetachAll();
+                            }
+                        }
+                        else
+                        {
+                            root.Worlds.Remove(world);
+                            world.DetachAll();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex,
+                            "V12Pak '{PakName}': world teardown failed for '{World}'",
+                            Path.GetFileName(PakPath), world.WorldName);
+                    }
+                }
+                LoadedWorlds.Clear();
+
+                if (root.SelectedWorld is { } selected && !root.Worlds.Contains(selected))
+                    root.FocusWorld((World?)null);
+
+                if (ReferenceEquals(root.Registry.Get<IAssetResolver>("AssetResolver"), Resolver))
+                {
+                    if (_previousResolver is not null)
+                        root.Registry.RegisterOrReplace("AssetResolver", _previousResolver);
+                    else
+                        root.Registry.Unregister("AssetResolver");
+                }
+            }
+
+            if (_componentSourceKeys.Count > 0)
+            {
+                try
+                {
+                    var registry = CSharpComponentRegistry.GetOrCreate();
+                    foreach (string key in _componentSourceKeys)
+                        registry.RemoveSource(key);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex,
+                        "V12Pak '{PakName}': component type teardown failed", Path.GetFileName(PakPath));
+                }
+            }
+            _componentSourceKeys.Clear();
+
+            // Unload collectible generations before unlinking them, so the load
+            // context is the last thing holding the assembly.
+            foreach (var context in _scriptContexts)
+            {
+                try { context.Unload(); }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex,
+                        "V12Pak '{PakName}': script context unload failed", Path.GetFileName(PakPath));
+                }
+            }
+            _scriptContexts.Clear();
+
+            foreach (var assembly in LoadedAssemblies)
+            {
+                V12LinkedAssemblies.Remove(assembly);
+                CSharpScriptImages.Remove(assembly);
+            }
+
+            V12PakLoader.RemoveProbeDirectories(_binProbeDirectories, _nativeProbeDirectories);
+            _binProbeDirectories.Clear();
+            _nativeProbeDirectories.Clear();
+
+            if (root is not null)
+                V12PakLoader.ForgetLoadedPak(root, PakPath);
+
+            _root = null;
+            Dispose();
+        }
+
+        internal void AttachTeardown(GameRoot root, IAssetResolver? previousResolver)
+        {
+            _root = root;
+            _previousResolver = previousResolver;
+        }
+
+        internal void TrackComponentSource(string sourceKey)
+        {
+            if (!string.IsNullOrWhiteSpace(sourceKey) && !_componentSourceKeys.Contains(sourceKey))
+                _componentSourceKeys.Add(sourceKey);
+        }
+
+        internal void TrackScriptContext(CSharpScriptLoadContext context, string sourceKey)
+        {
+            if (context is not null && !_scriptContexts.Contains(context))
+                _scriptContexts.Add(context);
+            TrackComponentSource(sourceKey);
+        }
+
+        internal void TrackScriptGamepak(IV12Gamepack gamepak)
+        {
+            if (gamepak is not null && !_scriptGamepaks.Contains(gamepak))
+                _scriptGamepaks.Add(gamepak);
+        }
+
+        internal void TrackBinProbeDirectory(string directory)
+        {
+            if (!string.IsNullOrWhiteSpace(directory) && !_binProbeDirectories.Contains(directory))
+                _binProbeDirectories.Add(directory);
+        }
+
+        internal void TrackNativeProbeDirectories(IEnumerable<string> directories)
+        {
+            foreach (string directory in directories)
+                if (!string.IsNullOrWhiteSpace(directory) && !_nativeProbeDirectories.Contains(directory))
+                    _nativeProbeDirectories.Add(directory);
         }
     }
 
@@ -136,6 +349,34 @@ namespace V12.Pak
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
+        /// <summary>
+        /// Loads a split pak from its part files, joined into one logical stream.
+        /// The parts' logical name (for example <c>MyGame.v12pak</c>) is the pak's
+        /// identity; the parts' directory is added to the dependency search paths
+        /// because the logical path is not itself a file.
+        /// </summary>
+        public static V12PakLoadResult LoadParts(
+            IReadOnlyList<string> parts,
+            V12PakOptions? options = null,
+            GameRoot? root = null)
+        {
+            ArgumentNullException.ThrowIfNull(parts);
+            if (parts.Count == 0)
+                throw new ArgumentException("At least one pak part is required.", nameof(parts));
+
+            options ??= new V12PakOptions();
+
+            string? directory = Path.GetDirectoryName(Path.GetFullPath(parts[0]));
+            if (!string.IsNullOrWhiteSpace(directory) &&
+                !options.DependencySearchPaths.Contains(directory, StringComparer.OrdinalIgnoreCase))
+            {
+                options.DependencySearchPaths.Add(directory);
+            }
+
+            string name = V12PakParts.LogicalName(parts[0]);
+            return LoadFromStream(name, () => V12PakMultiStream.Open(parts), options, root);
+        }
+
         private static V12PakLoadResult LoadCore(
             string pakPath,
             Func<V12PakReader> createReader,
@@ -171,7 +412,7 @@ namespace V12.Pak
                 // this pak's own content can reference the components it ships.
                 if (options.LoadDlls)
                 {
-                    LoadBinDependencies(reader);
+                    LoadBinDependencies(reader, result);
                     LoadDlls(reader, manifest, result, root);
                 }
                 else
@@ -185,7 +426,8 @@ namespace V12.Pak
                 // Native libraries are resolved lazily by the platform loader, so
                 // the probe directories have to exist before any gamepak code runs
                 // a P/Invoke.
-                RegisterNativeProbeDirectories(reader.TempDirectory);
+                result.TrackNativeProbeDirectories(
+                    RegisterNativeProbeDirectories(reader.TempDirectory));
 
                 // Publish the resolver BEFORE worlds parse. Components attach
                 // during parsing and read their assets from the registry in
@@ -195,6 +437,7 @@ namespace V12.Pak
                 // Dependency assets stay reachable through the fallback chain.
                 previousResolver = root.Registry.Get<IAssetResolver>("AssetResolver");
                 resolver.Fallback = previousResolver;
+                result.AttachTeardown(root, previousResolver);
                 root.Registry.RegisterOrReplace("AssetResolver", resolver);
 
                 if (options.AllowWorldLoading)
@@ -220,7 +463,10 @@ namespace V12.Pak
                         root.Registry.Unregister("AssetResolver");
                 }
 
-                if (result != null) result.Dispose();
+                // The load never completed. Unload whatever landed (partial
+                // worlds, probe directories, dependency paks) instead of only
+                // releasing the reader.
+                if (result != null) result.Unload();
                 else reader?.Dispose();
                 throw;
             }
@@ -468,12 +714,13 @@ namespace V12.Pak
         /// (e.g. V12.Basic.dll) before the gamepak DLLs, so their references bind.
         /// Assemblies already loaded in the process are reused, not loaded twice.
         /// </summary>
-        private static void LoadBinDependencies(V12PakReader reader)
+        private static void LoadBinDependencies(V12PakReader reader, V12PakLoadResult result)
         {
             string binDir = Path.Combine(reader.TempDirectory, "bin");
             if (!Directory.Exists(binDir)) return;
 
-            RegisterBinProbeDirectory(binDir);
+            if (RegisterBinProbeDirectory(binDir))
+                result.TrackBinProbeDirectory(binDir);
 
             var nativeLibraries = new List<string>();
             foreach (var dll in Directory.GetFiles(binDir, "*.dll"))
@@ -526,16 +773,24 @@ namespace V12.Pak
             }
         }
 
-        private static void RegisterBinProbeDirectory(string directory)
+        private static bool RegisterBinProbeDirectory(string directory)
         {
             lock (BinResolveGate)
             {
+                bool added = false;
                 if (!BinProbeDirectories.Contains(directory, StringComparer.OrdinalIgnoreCase))
+                {
                     BinProbeDirectories.Add(directory);
+                    added = true;
+                }
 
-                if (BinResolveHooked) return;
-                BinResolveHooked = true;
-                AppDomain.CurrentDomain.AssemblyResolve += ResolveFromBinDirectories;
+                if (!BinResolveHooked)
+                {
+                    BinResolveHooked = true;
+                    AppDomain.CurrentDomain.AssemblyResolve += ResolveFromBinDirectories;
+                }
+
+                return added;
             }
         }
 
@@ -601,8 +856,10 @@ namespace V12.Pak
         /// what makes <c>assimp.dll</c>/<c>libassimp.so</c> in a pak findable on
         /// Linux and macOS.
         /// </summary>
-        private static void RegisterNativeProbeDirectories(string extractionRoot)
+        private static List<string> RegisterNativeProbeDirectories(string extractionRoot)
         {
+            var added = new List<string>();
+
             // Android and iOS refuse to dlopen a library from app-writable
             // storage, so an extracted bin/ copy is unusable even though the
             // file is there. Native dependencies belong in the host's own
@@ -612,7 +869,7 @@ namespace V12.Pak
                 Log.Debug(
                     "V12Pak: skipping native probe directories on mobile; " +
                     "native libraries must ship with the host application.");
-                return;
+                return added;
             }
 
             var directories = new List<string>();
@@ -626,17 +883,20 @@ namespace V12.Pak
                 directories.AddRange(PlatformNativeRidDirectories(directory));
             }
 
-            if (directories.Count == 0) return;
+            if (directories.Count == 0) return added;
 
             lock (NativeResolveGate)
             {
                 foreach (string directory in directories)
                 {
-                    if (!NativeProbeDirectoryList.Contains(directory, StringComparer.OrdinalIgnoreCase))
-                        NativeProbeDirectoryList.Add(directory);
+                    if (NativeProbeDirectoryList.Contains(directory, StringComparer.OrdinalIgnoreCase))
+                        continue;
+
+                    NativeProbeDirectoryList.Add(directory);
+                    added.Add(directory);
                 }
 
-                if (NativeResolveHooked) return;
+                if (NativeResolveHooked) return added;
                 NativeResolveHooked = true;
 
                 AssemblyLoadContext.Default.ResolvingUnmanagedDll += ResolveNativeFromPakDirectories;
@@ -645,6 +905,45 @@ namespace V12.Pak
                 if (context is not null && !ReferenceEquals(context, AssemblyLoadContext.Default))
                     context.ResolvingUnmanagedDll += ResolveNativeFromPakDirectories;
             }
+
+            return added;
+        }
+
+        /// <summary>
+        /// Drops probe directories a pak registered, so an unloaded pak stops
+        /// being searched for assemblies and native libraries. The resolver
+        /// hooks themselves stay installed for the process and become no-ops.
+        /// </summary>
+        internal static void RemoveProbeDirectories(
+            IEnumerable<string>? binDirectories,
+            IEnumerable<string>? nativeDirectories)
+        {
+            if (binDirectories is not null)
+            {
+                lock (BinResolveGate)
+                {
+                    foreach (string directory in binDirectories)
+                        BinProbeDirectories.RemoveAll(existing =>
+                            string.Equals(existing, directory, StringComparison.OrdinalIgnoreCase));
+                }
+            }
+
+            if (nativeDirectories is not null)
+            {
+                lock (NativeResolveGate)
+                {
+                    foreach (string directory in nativeDirectories)
+                        NativeProbeDirectoryList.RemoveAll(existing =>
+                            string.Equals(existing, directory, StringComparison.OrdinalIgnoreCase));
+                }
+            }
+        }
+
+        /// <summary>Removes a pak from the per-root loaded set (see <see cref="Unload"/>).</summary>
+        internal static void ForgetLoadedPak(GameRoot root, string pakPath)
+        {
+            var set = root.Registry.Get<HashSet<string>>(LoadedPaksKey);
+            set?.Remove(pakPath);
         }
 
         /// <summary>
@@ -876,7 +1175,10 @@ namespace V12.Pak
                     var assembly = LoadAssembly(dll);
                     V12LinkedAssemblies.Add(assembly);
                     result.LoadedAssemblies.Add(assembly);
-                    result.RegisteredCSharpTypes += registry.RegisterAssembly(assembly, sourcePrefix + Path.GetFileName(dll));
+
+                    string sourceKey = sourcePrefix + Path.GetFileName(dll);
+                    result.RegisteredCSharpTypes += registry.RegisterAssembly(assembly, sourceKey);
+                    result.TrackComponentSource(sourceKey);
                 }
                 catch (Exception ex)
                 {
@@ -929,11 +1231,12 @@ namespace V12.Pak
 
             try
             {
+                string sourceKey = "pak:" + assemblyName;
                 var context = new CSharpScriptLoadContext(assemblyName);
                 var assembly = context.LoadFrom(compile.AssemblyPath);
+                result.TrackScriptContext(context, sourceKey);
 
                 var registry = CSharpComponentRegistry.GetOrCreate();
-                string sourceKey = "pak:" + assemblyName;
                 registry.RemoveSource(sourceKey);
                 int types = registry.RegisterAssembly(assembly, sourceKey);
 
@@ -987,6 +1290,7 @@ namespace V12.Pak
                 {
                     var gamepack = CreateGamepack(path, Path.GetFileNameWithoutExtension(script));
                     root.Gamepaks.Add(gamepack);
+                    result.TrackScriptGamepak(gamepack);
                     result.LoadedGamepaks++;
                     Log.Information("V12Pak: registered {Kind} gamepak '{Name}' from '{Script}'",
                         gamepack is ObjektRTGamepak ? "ObjektRT" : "Contract", gamepack.Name, script);
